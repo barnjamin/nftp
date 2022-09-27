@@ -8,15 +8,25 @@ from fuse import Fuse
 fuse.fuse_python_api = (0, 2)
 class MyStat(fuse.Stat):
     def __init__(self):
+        # permissions
         self.st_mode = 0
+        # ??
         self.st_ino = 0
+        # device id holding file
         self.st_dev = 0
+        # number of links
         self.st_nlink = 0
+        # user id of file owner
         self.st_uid = 0
+        # group id of file
         self.st_gid = 0
+        # size of file
         self.st_size = 0
+        # access time
         self.st_atime = 0
+        # mod time
         self.st_mtime = 0
+        # change time
         self.st_ctime = 0
 
 class HelloFS(Fuse):
@@ -43,6 +53,7 @@ class HelloFS(Fuse):
 
     
     def getattr(self, path):
+        print("hi getattr")
         st = MyStat()
         if path == '/':
             st.st_mode = stat.S_IFDIR | 0o755
@@ -57,22 +68,19 @@ class HelloFS(Fuse):
         return st
 
     def readdir(self, path, offset):
+        print("hi readdir")
         for r in  ['.', '..'] +  list(self.files.keys()):
             yield fuse.Direntry(r)
 
     def open(self, path, flags):
+        print("hi open")
         if path[1:] not in self.files:
             return -errno.ENOENT
 
-        accmode = os.O_RDONLY | os.O_WRONLY | os.O_RDWR
+        return 0
 
-        if (flags & accmode) != os.O_RDONLY:
-            return -errno.EACCES
 
     def read(self, path, size, offset):
-        if path[1:] not in self.files:
-            return -errno.ENOENT
-
         slen = self.files[path[1:]] * 1024
 
         buf = b''
@@ -80,14 +88,28 @@ class HelloFS(Fuse):
             if offset + size > slen:
                 size = slen - offset
 
-            for chunk in range((size // 1024) + 1):
-                byte_start = offset + (chunk*1024)
-                box_name = path[1:] + (byte_start//1024).to_bytes(4, 'big')
+            offset_pos = offset % 1024
+            offset_idx = offset // 1024
+            iters = (size // 1024) + 1
+
+            for chunk in range(iters):
+                box_name = path[1:].encode() + (offset_idx + chunk).to_bytes(4, 'big')
                 box = self.client.application_box_by_name(self.app_id, box_name) 
                 buf += base64.b64decode(box['value'])
+
+            buf = buf[offset_pos:offset_pos+size]
         else:
-            buf = b''
+            buf = bytes(size) 
         return buf
+
+    def unlink(self, path):
+        return 0
+
+    def mkdir(self, path, mode):
+        return 0
+   
+    def rmdir(self, path):
+        return 0
 
 def main():
     usage="""

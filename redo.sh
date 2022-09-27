@@ -1,5 +1,7 @@
 #!/bin/bash
 
-umount /tmp/wat
-rm -rf /tmp/wat
-mkdir /tmp/wat
+DIR=/tmp/wat
+umount $DIR 
+rm -rf $DIR
+mkdir $DIR 
+python nftp.py $DIR 
