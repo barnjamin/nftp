@@ -5,12 +5,10 @@ import fuse
 from fuse import Fuse
 import logging
 
+logging.basicConfig(filename="/tmp/nftp.log", filemode="w", level=logging.DEBUG)
+
 
 def main():
-
-    logging.basicConfig(filename="/tmp/nftp.log", filemode="w", level=logging.DEBUG)
-    logging.info("hi")
-
     ALGORAND_APP_ID = 125
 
     server = NftpFS(
@@ -20,12 +18,8 @@ def main():
         # idk what this does?
         dash_s_do="setsingle",
     )
-    logging.info("h0")
-
     server.parse(errex=0)
-    logging.info("he")
     server.main()
-    logging.info("hay")
 
 
 if __name__ == "__main__":
