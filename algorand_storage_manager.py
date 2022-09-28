@@ -3,7 +3,7 @@ import logging
 import stat
 import beaker as bkr
 
-from contract import NFTP
+from algorand.contract import NFTP
 from nftp import StorageManager, FileStat
 
 

@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
 import logging
 import stat, errno
-import beaker as bkr
-from algorand_storage_manager import AlgorandStorageManager
-
 import fuse
 from fuse import Fuse
+
+from algorand_storage_manager import AlgorandStorageManager
 
 
 fuse.fuse_python_api = (0, 2)
@@ -77,8 +76,7 @@ class NftpFS(Fuse):
     def __init__(self, storage_manager: StorageManager, **kwargs):
         super().__init__(**kwargs)
         self.storage_manager = storage_manager
-
-        logging.debug(self.storage_manager.filenames())
+        logging.debug(f"initialized with filenames: {self.storage_manager.filenames()}")
 
     def getattr(self, path: str):
         logging.debug(f"getattr for {path}")
@@ -111,7 +109,7 @@ class NftpFS(Fuse):
             yield fuse.Direntry(fname)
 
     def open(self, path: str, flags: int):
-        # TODO: check if allowed?
+        # TODO: check if allowed based on file perms?
         logging.debug(f"open: {path}")
 
         try:
@@ -123,6 +121,7 @@ class NftpFS(Fuse):
 
     def read(self, path: str, size: int, offset: int) -> bytes:
         logging.debug(f"read: {path}")
+
         try:
             buf = self.storage_manager.read_file(path[1:], offset, size)
         except Exception as e:
@@ -142,8 +141,8 @@ class NftpFS(Fuse):
 
     def unlink(self, path: str):
         logging.debug(f"unlink: {path}")
-        try:
 
+        try:
             self.storage_manager.delete(path[1:])
         except Exception as e:
             logging.error("unlink error: " + e.__str__())
