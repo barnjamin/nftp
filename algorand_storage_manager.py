@@ -46,12 +46,17 @@ class AlgorandStorageManager(StorageManager):
                 fst.st_nlink = 1
                 fst.st_size = self.storage_size * idx
                 files[fname] = fst
+        logging.debug(f"listing of files performed with files: {files}")
 
         return files
 
+    def create_file(self, name: str, mode: int, dev: int):
+        self._write_box(name, 0, bytes(self.storage_size))
+        self.files = self.list_files()
+
     def read_file(self, name: str, offset: int, size: int) -> bytes:
         # refreshes our list
-        self.exists(name)
+        self.file_exists(name)
 
         slen = self.files[name].num_boxes * self.storage_size
 
@@ -78,49 +83,78 @@ class AlgorandStorageManager(StorageManager):
 
         return buf
 
-    def write_file(self, name: str, offset: int, buf: int):
-        # TODO: refresh the cache?
-        # create account if new?
+    def write_file(self, name: str, offset: int, buf: bytes):
         start_idx = offset // self.storage_size
         start_offset = offset % self.storage_size
 
         stop_idx = (offset + len(buf)) // self.storage_size
-        stop_offset = offset % self.storage_size
+        stop_offset = (offset + len(buf)) % self.storage_size
 
+        logging.debug(
+            f"writing from {start_idx} : {start_offset} to {stop_idx} : {stop_offset}"
+        )
         for idx in range(start_idx, stop_idx + 1):
-            working_buf = bytes(self.storage_size)
-            if stop_offset > 0 or start_offset > 0:
+            working_buf = bytearray(
+                buf[idx * self.storage_size : (idx + 1) * self.storage_size]
+            )
+            if idx == start_idx and start_offset > 0:
                 # Partial write, might as well read the whole storage unit
-                working_buf[:] = self._read_box(name, idx)
+                working_buf[:start_idx] = self._read_box(name, idx)[start_idx:]
+            elif idx == stop_idx and stop_offset > 0:
+                working_buf[stop_idx:] = self._read_box(name, idx)[:stop_idx]
 
-            working_buf[start_offset:stop_offset] = buf[
-                idx * self.storage_size : (idx + 1) * self.storage_size
-            ]
+            if len(working_buf) == 0:
+                return
 
-            self._write_box(name, idx, working_buf)
+            logging.debug(f"about to write: {working_buf.hex()}")
+            try:
+                self._write_box(name, idx, working_buf)
+            except Exception as e:
+                logging.error(f"Failed to write: {e}")
+                raise e
 
-    def delete(self, name: str):
+    def delete_file(self, name: str):
         # refresh cache
-        self.exists(name)
+        self.file_exists(name)
         for idx in range(self.files[name].num_boxes + 1):
             self._delete_box(name, idx)
+
+        del self.files[name]
 
     def _read_box(self, name: str, idx: int) -> bytes:
         logging.debug(f"_read_box: {name} {idx}")
         box_name = self._box_name(name, idx)
         logging.debug(f"getting app box: {name} {idx}")
-        box_response = self.app_client.client.application_box_by_name(
-            self.app_client.app_id, box_name
-        )
-        return base64.b64decode(box_response["value"])
+        try:
+            box_response = self.app_client.client.application_box_by_name(
+                self.app_client.app_id, box_name
+            )
+            return base64.b64decode(box_response["value"])
+        except Exception as e:
+            logging.error(f"Failed to get box: {e}")
+            raise e
 
     def _delete_box(self, name: bytes, idx: int):
         box_name = self._box_name(name, idx)
-        self.app_client.call(NFTP.delete_data, box_name=box_name)
+        self.app_client.call(
+            NFTP.delete_data,
+            box_name=box_name,
+            boxes=[[self.app_client.app_id, box_name]],
+        )
 
     def _write_box(self, name: bytes, idx: int, data: bytes):
         box_name = self._box_name(name, idx)
-        self.app_client.call(NFTP.put_data, box_name=box_name, data=data)
+        logging.debug(f"writing to {box_name.hex()} ({len(data)} bytes)")
+        try:
+            self.app_client.call(
+                NFTP.put_data,
+                box_name=box_name,
+                data=data,
+                boxes=[[self.app_client.app_id, box_name]],
+            )
+        except Exception as e:
+            logging.error(f"Failed to write in app call: {e}")
+            raise e
 
     def _box_name(self, name: str, idx: int) -> bytes:
         return name.encode() + idx.to_bytes(4, "big")

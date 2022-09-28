@@ -41,10 +41,10 @@ class StorageManager(ABC):
     def __init__(self):
         self.files: dict[str, FileStat] = self.list_files()
 
-    def filenames(self) -> list[str]:
+    def file_names(self) -> list[str]:
         return list(self.files.keys())
 
-    def exists(self, name: str) -> bool:
+    def file_exists(self, name: str) -> bool:
         # refresh cache
         self.files = self.list_files()
         return name in self.files
@@ -59,6 +59,10 @@ class StorageManager(ABC):
         ...
 
     @abstractmethod
+    def create_file(self, name: str):
+        ...
+
+    @abstractmethod
     def read_file(self, name: str, offset: int, size: int) -> bytes:
         ...
 
@@ -67,17 +71,24 @@ class StorageManager(ABC):
         ...
 
     @abstractmethod
-    def delete(self, name: str):
+    def delete_file(self, name: str):
         ...
 
 
 class NftpFS(Fuse):
-    """lmao"""
+    """Nakamoto File Transfer Protocol
+
+    enable the free (not actually free) sharing of data using simple (complicated)
+    memory management through on chain and cross chain operations
+
+    """
 
     def __init__(self, storage_manager: StorageManager, **kwargs):
         super().__init__(**kwargs)
         self.storage_manager = storage_manager
-        logging.debug(f"initialized with filenames: {self.storage_manager.filenames()}")
+        logging.debug(
+            f"initialized with filenames: {self.storage_manager.file_names()}"
+        )
 
     def getattr(self, path: str):
         logging.debug(f"getattr for {path}")
@@ -88,7 +99,7 @@ class NftpFS(Fuse):
             fst.st_nlink = 2
             return fst
 
-        if self.storage_manager.exists(path[1:]):
+        if self.storage_manager.file_exists(path[1:]):
             logging.debug("file exists, getting stats")
             try:
                 fst = self.storage_manager.file_stat(path[1:])
@@ -102,7 +113,7 @@ class NftpFS(Fuse):
         logging.debug(f"readdir: {path} {offset}")
 
         try:
-            fnames = self.storage_manager.filenames()
+            fnames = self.storage_manager.file_names()
         except Exception as e:
             logging.error("readdir error:" + e.__str__())
 
@@ -114,7 +125,7 @@ class NftpFS(Fuse):
         logging.debug(f"open: {path}")
 
         try:
-            ok = self.storage_manager.exists(path[1:])
+            ok = self.storage_manager.file_exists(path[1:])
         except Exception as e:
             logging.error("open error: " + e.__str__())
 
@@ -147,3 +158,60 @@ class NftpFS(Fuse):
             self.storage_manager.delete(path[1:])
         except Exception as e:
             logging.error("unlink error: " + e.__str__())
+
+    def mknod(self, path, mode, dev):
+        logging.debug(f"mknod: {path} {mode} {dev}, {type(mode)}, {type(dev)}")
+        self.storage_manager.create_file(path[1:], mode, dev)
+
+    def unlink(self, path):
+        logging.debug(f"unlink: {path}")
+        self.storage_manager.delete_file(path[1:])
+
+    def readlink(self, path):
+        logging.debug(f"readlink: {path}")
+        return
+        # return os.readlink("." + path)
+
+    def copy_file_range(self):
+        logging.debug(f"copy file range")
+
+    def rmdir(self, path):
+        logging.debug(f"readlink: {path}")
+        # os.rmdir("." + path)
+        return
+
+    def symlink(self, path, path1):
+        logging.debug(f"symlink: {path1, path}")
+        return 0
+
+    def rename(self, path, path1):
+        logging.debug(f"rename: {path1, path}")
+        return 0
+
+    def link(self, path, path1):
+        logging.debug(f"link: {path1, path}")
+        return 0
+
+    def chmod(self, path, mode):
+        logging.debug(f"chmod: {path, mode}")
+        return 0
+
+    def chown(self, path, user, group):
+        logging.debug(f"chown: {path, user, group}")
+        return 0
+
+    def truncate(self, path, len):
+        logging.debug(f"truncate: {path, len}")
+        # f = open("." + path, "a")
+        # f.truncate(len)
+        # f.close()
+
+        # TODO:
+        return 0
+
+    def mkdir(self, path, mode):
+        logging.debug(f"mkdir: {path, mode}")
+        # os.mkdir("." + path, mode)
+
+    def utime(self, path, times):
+        logging.debug(f"utime: {path, times}")

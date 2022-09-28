@@ -9,7 +9,7 @@ logging.basicConfig(filename="/tmp/nftp.log", filemode="w", level=logging.DEBUG)
 
 
 def main():
-    ALGORAND_APP_ID = 125
+    ALGORAND_APP_ID = 164
 
     server = NftpFS(
         storage_manager=AlgorandStorageManager.from_app_id(ALGORAND_APP_ID),
