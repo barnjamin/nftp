@@ -1,7 +1,9 @@
 #!/bin/bash
 
-DIR=/tmp/wat
-umount $DIR 
-rm -rf $DIR
+DIR=/tmp/demo
+if [ -d $DIR ]; then
+    umount $DIR 
+    rm -rf $DIR
+fi
 mkdir $DIR 
 python nftp.py $DIR 

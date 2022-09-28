@@ -15,6 +15,7 @@ from errno import *
 from stat import *
 import fcntl
 from threading import Lock
+
 # pull in some spaghetti to make this stuff work without fuse-py being installed
 try:
     import _find_fuse_parts
@@ -25,26 +26,29 @@ from fuse import Fuse
 
 import logging
 
-if not hasattr(fuse, '__version__'):
-    raise RuntimeError("your fuse-py doesn't know of fuse.__version__, probably it's too old.")
+if not hasattr(fuse, "__version__"):
+    raise RuntimeError(
+        "your fuse-py doesn't know of fuse.__version__, probably it's too old."
+    )
 
 fuse.fuse_python_api = (0, 2)
 
-fuse.feature_assert('stateful_files', 'has_init')
+fuse.feature_assert("stateful_files", "has_init")
 
-logger = logging.getLogger('spam_application')
+logger = logging.getLogger("spam_application")
 logger.setLevel(logging.DEBUG)
 
-fh = logging.FileHandler('/home/jsiegel/spam.log')
+fh = logging.FileHandler("/home/jsiegel/spam.log")
 fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
 
+
 def flag2mode(flags):
-    md = {os.O_RDONLY: 'rb', os.O_WRONLY: 'wb', os.O_RDWR: 'wb+'}
+    md = {os.O_RDONLY: "rb", os.O_WRONLY: "wb", os.O_RDWR: "wb+"}
     m = md[flags & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR)]
 
     if flags | os.O_APPEND:
-        m = m.replace('w', 'a', 1)
+        m = m.replace("w", "a", 1)
 
     return m
 
@@ -52,7 +56,7 @@ def flag2mode(flags):
 class Xmp(Fuse):
     def __init__(self, *args, **kw):
         Fuse.__init__(self, *args, **kw)
-        self.root = '/'
+        self.root = "/"
 
     def getattr(self, path):
         logger.info(["getattr", path])
@@ -144,13 +148,11 @@ class Xmp(Fuse):
         os.chdir(self.root)
 
     class XmpFile(object):
-
         def __init__(self, path, flags, *mode):
             logger.info(["XmpFile__init__", path, flags, *mode])
-            self.file = os.fdopen(os.open("." + path, flags, *mode),
-                                  flag2mode(flags))
+            self.file = os.fdopen(os.open("." + path, flags, *mode), flag2mode(flags))
             self.fd = self.file.fileno()
-            if hasattr(os, 'pread'):
+            if hasattr(os, "pread"):
                 self.iolock = None
             else:
                 self.iolock = Lock()
@@ -186,13 +188,13 @@ class Xmp(Fuse):
             self.file.close()
 
         def _fflush(self):
-            if 'w' in self.file.mode or 'a' in self.file.mode:
+            if "w" in self.file.mode or "a" in self.file.mode:
                 self.file.flush()
 
         def fsync(self, isfsyncfile):
             logger.info("XmpFileFSync")
             self._fflush()
-            if isfsyncfile and hasattr(os, 'fdatasync'):
+            if isfsyncfile and hasattr(os, "fdatasync"):
                 os.fdatasync(self.fd)
             else:
                 os.fsync(self.fd)
@@ -219,11 +221,11 @@ class Xmp(Fuse):
             # Advisory file locking is pretty messy in Unix, and the Python
             # interface to this doesn't make it better.
             # We can't do fcntl(2)/F_GETLK from Python in a platfrom independent
-            # way. The following implementation *might* work under Linux. 
+            # way. The following implementation *might* work under Linux.
             #
             # if cmd == fcntl.F_GETLK:
             #     import struct
-            # 
+            #
             #     lockdata = struct.pack('hhQQi', kw['l_type'], os.SEEK_SET,
             #                            kw['l_start'], kw['l_len'], kw['l_pid'])
             #     ld2 = fcntl.fcntl(self.fd, fcntl.F_GETLK, lockdata)
@@ -232,14 +234,16 @@ class Xmp(Fuse):
             #     res = {}
             #     for i in xrange(len(uld2)):
             #          res[flockfields[i]] = uld2[i]
-            #  
+            #
             #     return fuse.Flock(**res)
 
             # Convert fcntl-ish lock parameters to Python's weird
             # lockf(3)/flock(2) medley locking API...
-            op = { fcntl.F_UNLCK : fcntl.LOCK_UN,
-                   fcntl.F_RDLCK : fcntl.LOCK_SH,
-                   fcntl.F_WRLCK : fcntl.LOCK_EX }[kw['l_type']]
+            op = {
+                fcntl.F_UNLCK: fcntl.LOCK_UN,
+                fcntl.F_RDLCK: fcntl.LOCK_SH,
+                fcntl.F_WRLCK: fcntl.LOCK_EX,
+            }[kw["l_type"]]
             if cmd == fcntl.F_GETLK:
                 return -EOPNOTSUPP
             elif cmd == fcntl.F_SETLK:
@@ -250,26 +254,33 @@ class Xmp(Fuse):
             else:
                 return -EINVAL
 
-            fcntl.lockf(self.fd, op, kw['l_start'], kw['l_len'])
-
+            fcntl.lockf(self.fd, op, kw["l_start"], kw["l_len"])
 
     def main(self, *a, **kw):
         self.file_class = self.XmpFile
         return Fuse.main(self, *a, **kw)
 
+
 def main():
 
-    usage = """
+    usage = (
+        """
 Userspace nullfs-alike: mirror the filesystem tree from some point on.
 
-""" + Fuse.fusage
+"""
+        + Fuse.fusage
+    )
 
-    server = Xmp(version="%prog " + fuse.__version__,
-                 usage=usage,
-                 dash_s_do='setsingle')
+    server = Xmp(
+        version="%prog " + fuse.__version__, usage=usage, dash_s_do="setsingle"
+    )
 
-    server.parser.add_option(mountopt="root", metavar="PATH", default='/',
-                             help="mirror filesystem from under PATH [default: %default]")
+    server.parser.add_option(
+        mountopt="root",
+        metavar="PATH",
+        default="/",
+        help="mirror filesystem from under PATH [default: %default]",
+    )
     server.parse(values=server, errex=1)
 
     try:
@@ -282,5 +293,5 @@ Userspace nullfs-alike: mirror the filesystem tree from some point on.
     server.main()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
