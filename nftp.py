@@ -209,9 +209,55 @@ class NftpFS(Fuse):
         # TODO:
         return 0
 
+    def close(self):
+        logging.debug("close")
+
     def mkdir(self, path, mode):
         logging.debug(f"mkdir: {path, mode}")
         # os.mkdir("." + path, mode)
 
     def utime(self, path, times):
         logging.debug(f"utime: {path, times}")
+
+    # def release(self):
+    #    logging.debug("release")
+    # def statfs(self):
+    #    logging.debug("statfs")
+    # def fsync(self):
+    #    logging.debug("fsync")
+    # def create(self):
+    #    logging.debug("create")
+    # def opendir(self):
+    #    logging.debug("opendir")
+    # def releasedir(self):
+    #    logging.debug("releasedir")
+    # def fsyncdir(self):
+    #    logging.debug("fsyncdir")
+    # def flush(self):
+    #    logging.debug("flushdir")
+    # def fgetattr(self):
+    #    logging.debug("fgetattr")
+    # def ftruncate(self):
+    #    logging.debug("ftruncate")
+    # def getxattr(self):
+    #    logging.debug("getxattr")
+    # def listxattr(self):
+    #    logging.debug("listxattr")
+    # def setxattr(self):
+    #    logging.debug("setxattr")
+    # def removexattr(self):
+    #    logging.debug("removexattr")
+    # def access(self):
+    #    logging.debug("access")
+    # def lock(self):
+    #    logging.debug("lock")
+    # def utimens(self):
+    #    logging.debug("utimens")
+    # def bmap(self):
+    #    logging.debug("bmap")
+    # def fsdestroy(self):
+    #    logging.debug("fsdestroy")
+    # def ioctl(self):
+    #    logging.debug("ioctl")
+    # def poll(self):
+    #    logging.debug("poll")

@@ -44,15 +44,19 @@ class AlgorandStorageManager(StorageManager):
                 fst = FileStat(idx)
                 fst.st_mode = stat.S_IFREG | 0o666
                 fst.st_nlink = 1
-                fst.st_size = self.storage_size * idx
+                fst.st_size = self.storage_size * (idx + 1)
                 files[fname] = fst
-        logging.debug(f"listing of files performed with files: {files}")
 
         return files
 
     def create_file(self, name: str, mode: int, dev: int):
         self._write_box(name, 0, bytes(self.storage_size))
         self.files = self.list_files()
+        # fst = FileStat()
+        # fst.st_mode = stat.S_IFREG | 0o666
+        # fst.st_nlink = 1
+        # fst.st_size = 0
+        # self.files[name] = fst
 
     def read_file(self, name: str, offset: int, size: int) -> bytes:
         # refreshes our list
