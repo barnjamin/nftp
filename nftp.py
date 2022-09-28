@@ -11,7 +11,6 @@ fuse.fuse_python_api = (0, 2)
 
 logging.basicConfig(filename="/tmp/nftpfs.log", filemode="w", level=logging.DEBUG)
 
-
 class FileStat(fuse.Stat):
     def __init__(self, num_boxes: int):
         self.num_boxes = num_boxes
@@ -150,10 +149,12 @@ class NftpFS(Fuse):
 
 def main():
     ALGORAND_APP_ID = 125
+
     server = NftpFS(
         storage_manager=AlgorandStorageManager(ALGORAND_APP_ID),
         version="%prog " + fuse.__version__,
-        usage=""" Userspace hello example """ + Fuse.fusage,
+        usage="Userspace Blockchain Mounted storage example:\n" + Fuse.fusage,
+        # idk what this does?
         dash_s_do="setsingle",
     )
 
