@@ -17,7 +17,7 @@ class AlgorandStorageManager(StorageManager):
     ):
         self.app_client = app_client
         self.storage_size = storage_size
-        self.files: dict[str, FileStat] = self.list_files()
+        super().__init__()
 
     @staticmethod
     def from_app_id(app_id: int) -> "AlgorandStorageManager":
@@ -26,14 +26,16 @@ class AlgorandStorageManager(StorageManager):
         algod_client = bkr.sandbox.clients.get_algod_client()
 
         return AlgorandStorageManager(
-            bkr.client.application_client.ApplicationClient(
-                client=algod_client, app=NFTP(), signer=acct.signer, app_id=app_id
+            app_client=bkr.client.application_client.ApplicationClient(
+                algod_client, NFTP(), signer=acct.signer, app_id=app_id
             )
         )
 
     def list_files(self) -> dict[str, FileStat]:
         files: dict[str, FileStat] = {}
+
         boxes = self.app_client.client.application_boxes(self.app_client.app_id)
+
         for box in boxes["boxes"]:
             fname, idx = self._box_seq(base64.b64decode(box["name"]))
 

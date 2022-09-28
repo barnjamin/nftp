@@ -4,14 +4,12 @@ import stat, errno
 import fuse
 from fuse import Fuse
 
-from algorand_storage_manager import AlgorandStorageManager
-
-
 fuse.fuse_python_api = (0, 2)
 
-logging.basicConfig(filename="/tmp/nftpfs.log", filemode="w", level=logging.DEBUG)
 
 class FileStat(fuse.Stat):
+    """data structure returned from stat requests on files"""
+
     def __init__(self, num_boxes: int):
         self.num_boxes = num_boxes
 
@@ -38,6 +36,8 @@ class FileStat(fuse.Stat):
 
 
 class StorageManager(ABC):
+    """abstracts blockchain specific access to allow consistent api across chains"""
+
     def __init__(self):
         self.files: dict[str, FileStat] = self.list_files()
 
@@ -72,6 +72,8 @@ class StorageManager(ABC):
 
 
 class NftpFS(Fuse):
+    """lmao"""
+
     def __init__(self, storage_manager: StorageManager, **kwargs):
         super().__init__(**kwargs)
         self.storage_manager = storage_manager
@@ -145,22 +147,3 @@ class NftpFS(Fuse):
             self.storage_manager.delete(path[1:])
         except Exception as e:
             logging.error("unlink error: " + e.__str__())
-
-
-def main():
-    ALGORAND_APP_ID = 125
-
-    server = NftpFS(
-        storage_manager=AlgorandStorageManager(ALGORAND_APP_ID),
-        version="%prog " + fuse.__version__,
-        usage="Userspace Blockchain Mounted storage example:\n" + Fuse.fusage,
-        # idk what this does?
-        dash_s_do="setsingle",
-    )
-
-    server.parse(errex=1)
-    server.main()
-
-
-if __name__ == "__main__":
-    main()
