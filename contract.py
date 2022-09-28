@@ -15,9 +15,6 @@ class BlockOData(LogicSignature):
 
 
 class NFTP(Application):
-
-    lsig = Precompile(BlockOData(version=6).program)
-
     @opt_in
     def opt_in(self):
         return Approve()

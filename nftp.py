@@ -1,7 +1,6 @@
 import base64
-from genericpath import exists
+import logging
 import os, stat, errno
-import algosdk
 from algosdk.v2client.algod import AlgodClient
 import beaker as bkr
 from contract import NFTP
@@ -9,16 +8,15 @@ from contract import NFTP
 import fuse
 from fuse import Fuse
 
-APP_ID = (125,)
-ALGOD_HOST = ("http://localhost:4001",)
-ALGOD_TOKEN = ("a" * 64,)
+APP_ID = 125
+ALGOD_HOST = "http://localhost:4001"
+ALGOD_TOKEN = "a" * 64
 
 fuse.fuse_python_api = (0, 2)
 
 
 class FileStat(fuse.Stat):
     def __init__(self, num_boxes: int):
-
         self.num_boxes = num_boxes
 
         # permissions
@@ -50,29 +48,31 @@ class StorageManager:
         self.files: dict[str, FileStat] = self.list_files()
 
     def filenames(self) -> list[str]:
-        return self.files.keys()
+        return list(self.files.keys())
 
     def list_files(self) -> dict[str, FileStat]:
         files: dict[str, FileStat] = {}
-
         boxes = self.app_client.client.application_boxes(self.app_client.app_id)
         for box in boxes["boxes"]:
-            name = base64.b64decode(box["name"])
-            # 4 bytes for uint32
-            fname = name[:-4].decode("utf-8")
-            idx = int.from_bytes(name[-4:], "big")
+            fname, idx = self._box_seq(base64.b64decode(box["name"]))
 
-            if fname not in self.files or idx > self.files[fname]:
-                files[fname] = FileStat(idx)
+            if fname not in files or idx > files[fname].num_boxes:
+                # Idk about the order of these being guaranteed
+                fst = FileStat(idx)
+                fst.st_mode = stat.S_IFREG | 0o666
+                fst.st_nlink = 1
+                fst.st_size = self.storage_size * idx
+                files[fname] = fst
+
         return files
 
-    def read_file(self, name: bytes, offset: int, len: int) -> bytes:
-        # refresh our list
-        self.files = self.list_files()
-        if name not in self.files:
-            raise Exception(-errno.ENOENT)
+    def read_file(self, name: str, offset: int, size: int) -> bytes:
+        # refreshes our list
+        self.exists(name)
 
         slen = self.files[name].num_boxes * self.storage_size
+
+        logging.debug(f"read file: {slen}")
 
         buf = b""
         if offset < slen:
@@ -83,18 +83,21 @@ class StorageManager:
             start_offset = offset % self.storage_size
 
             stop_idx = size // self.storage_size
-            stop_offset = size % self.storage_size
+            stop_offset = self.storage_size - (size % self.storage_size)
 
-            for chunk in range(start_idx, stop_idx):
-                buf += self._read_box(name, start_idx + chunk)
-
-            buf = buf[start_offset:stop_offset]
+            logging.debug(
+                "{} {} {} {}".format(start_idx, start_offset, stop_idx, stop_offset)
+            )
+            for idx in range(start_idx, stop_idx):
+                buf += self._read_box(name, idx)[start_offset:stop_offset]
         else:
             buf = bytes(size)
 
         return buf
 
     def write_file(self, name: str, offset: int, buf: int):
+        # TODO: refresh the cache?
+        # create account if new?
         start_idx = offset // self.storage_size
         start_offset = offset % self.storage_size
 
@@ -102,21 +105,20 @@ class StorageManager:
         stop_offset = offset % self.storage_size
 
         for idx in range(start_idx, stop_idx + 1):
-            working_buff = bytes(self.storage_size)
+            working_buf = bytes(self.storage_size)
             if stop_offset > 0 or start_offset > 0:
                 # Partial write, might as well read the whole storage unit
-                working_buff[:] = self._read_box(name, idx)
+                working_buf[:] = self._read_box(name, idx)
 
-            working_buff[start_offset:stop_offset] = buf[
+            working_buf[start_offset:stop_offset] = buf[
                 idx * self.storage_size : (idx + 1) * self.storage_size
             ]
 
-            self._write_box(name, idx, working_buff)
+            self._write_box(name, idx, working_buf)
 
     def delete(self, name: str):
-        # refresh index
-        self.files = self.list_files()
-
+        # refresh cache
+        self.exists(name)
         for idx in range(self.files[name].num_boxes + 1):
             self._delete_box(name, idx)
 
@@ -126,12 +128,14 @@ class StorageManager:
         return name in self.files
 
     def file_stat(self, name: str):
-        # use cached
+        # reuse cached, this is called a lot
         # will raise key error, thats ok
         return self.files[name]
 
-    def _read_box(self, name: bytes, idx: int) -> bytes:
+    def _read_box(self, name: str, idx: int) -> bytes:
+        logging.debug(f"_read_box: {name} {idx}")
         box_name = self._box_name(name, idx)
+        logging.debug(f"getting app box: {name} {idx}")
         box_response = self.app_client.client.application_box_by_name(
             self.app_client.app_id, box_name
         )
@@ -145,8 +149,8 @@ class StorageManager:
         box_name = self._box_name(name, idx)
         self.app_client.call(NFTP.put_data, box_name=box_name, data=data)
 
-    def _box_name(self, name: str, idx: int):
-        return f"{name.encode()}{idx.to_bytes(4, 'big')}"
+    def _box_name(self, name: str, idx: int) -> bytes:
+        return name.encode() + idx.to_bytes(4, "big")
 
     def _box_seq(self, box_name: bytes) -> tuple[str, int]:
         fname = box_name[:-4].decode("utf-8")
@@ -159,40 +163,81 @@ class HelloFS(Fuse):
         super().__init__(**kwargs)
         self.storage_manager = storage_manager
 
-    def getattr(self, path):
+        logging.basicConfig(filename="/tmp/003.log", filemode="w", level=logging.DEBUG)
+        logging.debug(self.storage_manager.filenames())
+
+    def getattr(self, path: str):
+        logging.debug("getting attr: " + str(type(path)))
         if path == "/":
-            fst = FileStat()
+            logging.debug("path is /")
+            fst = FileStat(0)
             fst.st_mode = stat.S_IFDIR | 0o755
             fst.st_nlink = 2
+            return fst
 
-        return self.storage_manager.file_stat(path[1:])
+        logging.debug(f"path is something else")
+        if self.storage_manager.exists(path[1:]):
+            logging.debug("Exists??")
+            try:
+                fst = self.storage_manager.file_stat(path[1:])
+            except Exception as e:
+                logging.error("getattr" + e.__str__())
+            return fst
+        else:
+            return -errno.ENOENT
 
-    def readdir(self, path, offset):
-        for r in [".", ".."] + list(self.storage_manager.filenames()):
-            yield fuse.Direntry(r)
+    def readdir(self, path: bytes, offset: int):
+        logging.debug("readdir: ")
+        try:
+            logging.debug("getting filenames")
+            fnames = self.storage_manager.filenames()
+        except Exception as e:
+            logging.error("readdir" + e.__str__())
 
-    def open(self, path, flags):
-        return int(self.storage_manager.exists(path[1:]))
+        for fname in [".", ".."] + fnames:
+            yield fuse.Direntry(fname)
 
-    def read(self, path, size, offset) -> bytes:
-        return self.storage_manager.read_file(path[1:], offset, size)
+    def open(self, path: str, flags: int):
+        # TODO: check if allowed?
+        logging.debug("open: " + str(type(path)))
+        try:
+            ok = self.storage_manager.exists(path[1:])
+        except Exception as e:
+            logging.error("open" + e.__str__())
+        return int(not ok)
+
+    def read(self, path: str, size: int, offset: int) -> bytes:
+        logging.debug("read: " + str(type(path)))
+        try:
+            buf = self.storage_manager.read_file(path[1:], offset, size)
+        except Exception as e:
+            logging.error("read" + e.__str__())
+
+        return buf
 
     def write(self, path: str, buf: int, offset: int) -> int:
-        return self.storage_manager.write_file(path[1:], offset, buf)
+        logging.debug("write: " + str(type(path)))
+        try:
+            written = self.storage_manager.write_file(path[1:], offset, buf)
+        except Exception as e:
+            logging.error("write" + e.__str__())
+        return written
 
     def unlink(self, path: str):
-        return int(self.storage_manager.delete(path[1:]))
-
-    def mkdir(self, path, mode):
-        return 0
-
-    def rmdir(self, path):
-        return 0
+        self.storage_manager.delete(path[1:])
 
 
 def main():
     usage = """ Userspace hello example """ + Fuse.fusage
+
+    acct = bkr.sandbox.get_accounts().pop()
+    algod_client = bkr.sandbox.clients.get_algod_client()
+    app_client = bkr.client.application_client.ApplicationClient(
+        client=algod_client, app=NFTP(), signer=acct.signer, app_id=APP_ID
+    )
+
     server = HelloFS(
+        storage_manager=StorageManager(app_client, 1024),
         version="%prog " + fuse.__version__,
         usage=usage,
         dash_s_do="setsingle",
