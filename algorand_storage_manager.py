@@ -111,7 +111,7 @@ class AlgorandStorageManager(StorageManager):
         )
         for idx in range(start_idx, stop_idx + 1):
 
-            if idx > self.files[name].num_boxes:
+            if idx >= self.files[name].num_boxes:
                 self._create_acct(name, idx)
                 self.files = self.list_files()
 
@@ -140,6 +140,7 @@ class AlgorandStorageManager(StorageManager):
             except Exception as e:
                 logging.error(f"Failed to write: {e}")
                 raise e
+            return len(buf)
 
     def delete_file(self, name: str):
         # refresh cache
