@@ -38,19 +38,19 @@ class AlgorandStorageManager(StorageManager):
         )
 
     def list_files(self) -> dict[str, FileStat]:
-        files: dict[str, FileStat] = {}
 
         app_state = self.app_client.get_application_state(raw=True)
         logging.info(f"{app_state}")
 
-        for fname, idx in app_state.items():
+        files: dict[str, FileStat] = {}
+        for fname, num_boxes in app_state.items():
             fname = self.strip_leading_zeros(fname).decode("utf-8")
-            if fname not in files or idx > files[fname].num_boxes:
+            if fname not in files or num_boxes > files[fname].num_boxes:
                 # Idk about the order of these being guaranteed
-                fst = FileStat(idx)
+                fst = FileStat(num_boxes)
                 fst.st_mode = stat.S_IFREG | 0o666
                 fst.st_nlink = 1
-                fst.st_size = self.storage_size * idx
+                fst.st_size = self.storage_size * num_boxes
                 files[fname] = fst
 
         return files
@@ -107,40 +107,39 @@ class AlgorandStorageManager(StorageManager):
         stop_offset = (offset + len(buf)) % self.storage_size
 
         logging.debug(
-            f"writing from {start_idx} : {start_offset} to {stop_idx} : {stop_offset}"
+            f"writing {len(buf)} bytes from {start_idx} : {start_offset} to {stop_idx} : {stop_offset}"
         )
-        for idx in range(start_idx, stop_idx + 1):
-
-            if idx >= self.files[name].num_boxes:
-                self._create_acct(name, idx)
+        for idx in range(stop_idx - start_idx):
+            box_idx = start_idx + idx
+            if box_idx >= self.files[name].num_boxes:
+                self._create_acct(name, box_idx)
                 self.files = self.list_files()
 
             try:
+                logging.debug(f"{buf.hex()}")
                 working_buf = bytearray(
                     buf[idx * self.storage_size : (idx + 1) * self.storage_size]
                 )
-                if idx == start_idx and start_offset > 0:
-                    logging.debug("applying start")
+                logging.debug(f"working buf size: {len(working_buf)}")
+                if box_idx == start_idx and start_offset > 0:
                     # Partial write, might as well read the whole storage unit
-                    working_buf[:start_offset] = self._read_acct(name, idx)[
-                        :start_offset
+                    working_buf[:start_offset] = self._read_acct(name, box_idx)[
+                        start_offset:
                     ]
-                    logging.debug("applying start2")
-                elif idx == stop_idx and stop_offset > 0:
-                    logging.debug("applying stop")
-                    working_buf[stop_offset:] = self._read_acct(name, idx)[stop_offset:]
-                    logging.debug("applying stop2")
+                elif box_idx == stop_idx and stop_offset > 0:
+                    working_buf[stop_offset:] = self._read_acct(name, box_idx)[
+                        :stop_offset
+                    ]
 
-                logging.debug(working_buf)
                 if len(working_buf) == 0:
-                    return
+                    return 0
 
                 logging.debug(f"about to write: {working_buf.hex()}")
-                self._write_acct(name, idx, working_buf)
+                self._write_acct(name, box_idx, working_buf)
             except Exception as e:
                 logging.error(f"Failed to write: {e}")
                 raise e
-            return len(buf)
+        return len(buf)
 
     def delete_file(self, name: str):
         # refresh cache
@@ -174,24 +173,37 @@ class AlgorandStorageManager(StorageManager):
 
     def _create_acct(self, name: str, idx: int):
         try:
+
             lsig_signer = self._storage_account(name, idx)
+            lsig_addr = lsig_signer.lsig.address()
+
+            ai = self.app_client.client.account_info(lsig_addr)
+            if "amount" in ai and ai["amount"] > 0:
+                return
+
             lsig_client = self.app_client.prepare(lsig_signer)
-            self.app_client.fund(bkr.consts.algo * 2, addr=lsig_signer.lsig.address())
-            deets = self._file_block_details(name, idx)
-            lsig_client.opt_in(deets=deets, rekey_to=self.app_client.app_addr)
+            self.app_client.fund(bkr.consts.algo * 2, addr=lsig_addr)
+            lsig_client.opt_in(
+                deets=self._file_block_details(name, idx),
+                rekey_to=self.app_client.app_addr,
+            )
         except Exception as e:
             logging.error(f"cant create account: {e}")
             raise e
 
     def _write_acct(self, name: str, idx: int, data: bytes):
-        lsig_signer = self._storage_account(name, idx)
-        deets = self._file_block_details(name, idx)
-        self.app_client.call(
-            NFTP.write,
-            deets=deets,
-            data=data + bytes(self.storage_size - len(data)),
-            storage_account=lsig_signer.lsig.address(),
-        )
+        try:
+            lsig_signer = self._storage_account(name, idx)
+            deets = self._file_block_details(name, idx)
+            self.app_client.call(
+                NFTP.write,
+                deets=deets,
+                data=data + bytes(self.storage_size - len(data)),
+                storage_account=lsig_signer.lsig.address(),
+            )
+        except Exception as e:
+            logging.error(f"error in write: {e}")
+            raise e
 
     def _file_block_details(self, name: str, idx: int) -> list[str | int]:
         return [bytes(32 - len(name)) + name.encode(), idx]
