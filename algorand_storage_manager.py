@@ -21,6 +21,7 @@ class AlgorandStorageManager(StorageManager):
         self, app_client: bkr.client.ApplicationClient, storage_size: int = 1024
     ):
         self.app_client = app_client
+        self.app_client.build()
         self.storage_size = storage_size
         super().__init__()
 
@@ -39,26 +40,32 @@ class AlgorandStorageManager(StorageManager):
     def list_files(self) -> dict[str, FileStat]:
         files: dict[str, FileStat] = {}
 
-        app_state = self.app_client.get_application_state()
+        app_state = self.app_client.get_application_state(raw=True)
+        logging.info(f"{app_state}")
 
-        boxes = self.app_client.client.application_boxes(self.app_client.app_id)
-
-        for box in boxes["boxes"]:
-            fname, idx = self._box_seq(base64.b64decode(box["name"]))
-
+        for fname, idx in app_state.items():
+            fname = self.strip_zeros(fname)
             if fname not in files or idx > files[fname].num_boxes:
                 # Idk about the order of these being guaranteed
-                fst = FileStat(idx + 1)
+                fst = FileStat(idx)
                 fst.st_mode = stat.S_IFREG | 0o666
                 fst.st_nlink = 1
-                fst.st_size = self.storage_size * (idx + 1)
+                fst.st_size = self.storage_size * idx
                 files[fname] = fst
 
         return files
 
+    def strip_zeros(self, name: bytes) -> str:
+        for idx, b in enumerate(name):
+            if b != 0:
+                return name[idx:].decode("utf-8")
+
+        return name
+
     def create_file(self, name: str, mode: int, dev: int):
         self._create_acct(name, 0)
         self.files = self.list_files()
+        logging.debug(f"{self.files}")
 
     def read_file(self, name: str, offset: int, size: int) -> bytes:
         # refreshes our list
@@ -83,7 +90,7 @@ class AlgorandStorageManager(StorageManager):
                 "{} {} {} {}".format(start_idx, start_offset, stop_idx, stop_offset)
             )
             for idx in range(start_idx, stop_idx):
-                buf += self._read_box(name, idx)[start_offset:stop_offset]
+                buf += self._read_acct(name, idx)[start_offset:stop_offset]
 
             logging.debug(f"{buf.hex()}")
 
@@ -139,9 +146,11 @@ class AlgorandStorageManager(StorageManager):
         del self.files[name]
 
     def _read_acct(self, name: str, idx: int) -> bytes:
-        acct_state = self.app_client.get_account_state(
-            self._acct_name(name, idx), raw=True
-        )
+        acct = self._storage_account(name, idx)
+        logging.debug(f"{acct.lsig.address()}")
+
+        acct_state = self.app_client.get_account_state(acct.lsig.address(), raw=True)
+        logging.debug(f"{acct_state}")
         # Make sure the blob is in the right order
         return b"".join(
             [acct_state[x.to_bytes(1, "big")][: self.storage_size] for x in range(9)]
@@ -156,13 +165,18 @@ class AlgorandStorageManager(StorageManager):
         self.app_client.call(
             NFTP.delete, deets=deets, storage_account=lsig_signer.lsig.address()
         )
-        lsig_client.close_out()
+        lsig_client.close_out(deets=deets)
 
     def _create_acct(self, name: str, idx: int):
-        lsig_signer = self._storage_account(name, idx)
-        lsig_client = self.app_client.prepare(lsig_signer)
-        deets = self._file_block_details(name, idx)
-        lsig_client.opt_in(deets)
+        try:
+            lsig_signer = self._storage_account(name, idx)
+            lsig_client = self.app_client.prepare(lsig_signer)
+            self.app_client.fund(bkr.consts.algo * 2, addr=lsig_signer.lsig.address())
+            deets = self._file_block_details(name, idx)
+            lsig_client.opt_in(deets=deets, rekey_to=self.app_client.app_addr)
+        except Exception as e:
+            logging.error(f"cant create account: {e}")
+            raise e
 
     def _write_acct(self, name: str, idx: int, data: bytes):
         lsig_signer = self._storage_account(name, idx)
@@ -170,7 +184,7 @@ class AlgorandStorageManager(StorageManager):
         self.app_client.call(
             NFTP.write,
             deets=deets,
-            data=data,
+            data=bytes(self.storage_size - len(data)) + data,
             storage_account=lsig_signer.lsig.address(),
         )
 
@@ -179,9 +193,17 @@ class AlgorandStorageManager(StorageManager):
 
     def _storage_account(self, name: str, idx: int) -> LogicSigTransactionSigner:
         app = cast(NFTP, self.app_client.app)
-        return app.tmpl_account.template_signer(
-            *self._file_block_details(name, idx), self.app_client.app_id
-        )
+        try:
+            deets = self._file_block_details(name, idx)
+            logging.info(f"deets: {deets}")
+            deets.append(self.app_client.app_id)
+            logging.info(f"{app.tmpl_account.template_values}")
+            val = app.tmpl_account.template_signer(*deets)
+            logging.info(f"{val}")
+        except Exception as e:
+            logging.error(f"wat: {e}")
+            raise e
+        return val
 
     def _acct_addr_seq(self, addr: str) -> tuple[str, int]:
         state = self.app_client.get_account_state(addr)

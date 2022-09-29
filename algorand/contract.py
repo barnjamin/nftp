@@ -125,47 +125,47 @@ def create_and_test():
     print(f"app id: {app_id}")
     ac.fund(consts.algo * 2)
 
-    print(f"acct: {acct.address}")
-    print(f"app: {app_addr}")
+    # print(f"acct: {acct.address}")
+    # print(f"app: {app_addr}")
 
-    app = cast(NFTP, ac.app)
+    # app = cast(NFTP, ac.app)
 
-    fname = "data.mp3"
-    with open(fname, "rb") as f:
-        data = f.read()
+    # fname = "data.mp3"
+    # with open(fname, "rb") as f:
+    #    data = f.read()
 
-    for idx in range((len(data) // storage_size) + 1):
-        chunk = data[idx * storage_size : (idx + 1) * storage_size]
+    # for idx in range((len(data) // storage_size) + 1):
+    #    chunk = data[idx * storage_size : (idx + 1) * storage_size]
 
-        if len(chunk) < storage_size:
-            chunk = bytes(storage_size - len(chunk)) + chunk
+    #    if len(chunk) < storage_size:
+    #        chunk = bytes(storage_size - len(chunk)) + chunk
 
-        normalized_fname = bytes(32 - len(fname)) + fname.encode()
-        deets = [normalized_fname, idx]
+    #    normalized_fname = bytes(32 - len(fname)) + fname.encode()
+    #    deets = [normalized_fname, idx]
 
-        lsig_signer = app.tmpl_account.template_signer(normalized_fname, idx, app_id)
-        print(f"lsig addr: {lsig_signer.lsig.address()}")
+    #    lsig_signer = app.tmpl_account.template_signer(normalized_fname, idx, app_id)
+    #    print(f"lsig addr: {lsig_signer.lsig.address()}")
 
-        lsig_client = ac.prepare(signer=lsig_signer)
-        try:
-            lsig_client.get_account_state()
-        except Exception as e:
-            print(f"Not opted in yet, opting in now: {e}")
-            ac.fund(consts.algo * 2, lsig_signer.lsig.address())
-            lsig_client.opt_in(deets=deets, rekey_to=app_addr)
-            print("after", lsig_client.get_account_state())
+    #    lsig_client = ac.prepare(signer=lsig_signer)
+    #    try:
+    #        lsig_client.get_account_state()
+    #    except Exception as e:
+    #        print(f"Not opted in yet, opting in now: {e}")
+    #        ac.fund(consts.algo * 2, lsig_signer.lsig.address())
+    #        lsig_client.opt_in(deets=deets, rekey_to=app_addr)
+    #        print("after", lsig_client.get_account_state())
 
-        print("writing")
-        ac.call(
-            NFTP.write,
-            deets=deets,
-            data=chunk,
-            storage_account=lsig_signer.lsig.address(),
-        )
+    #    print("writing")
+    #    ac.call(
+    #        NFTP.write,
+    #        deets=deets,
+    #        data=chunk,
+    #        storage_account=lsig_signer.lsig.address(),
+    #    )
 
-        print("deleting")
-        ac.call(NFTP.delete, deets=deets, storage_account=lsig_signer.lsig.address())
-        lsig_client.close_out(deets=deets)
+    #    print("deleting")
+    #    ac.call(NFTP.delete, deets=deets, storage_account=lsig_signer.lsig.address())
+    #    lsig_client.close_out(deets=deets)
 
 
 if __name__ == "__main__":
