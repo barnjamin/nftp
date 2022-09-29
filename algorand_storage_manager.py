@@ -44,7 +44,7 @@ class AlgorandStorageManager(StorageManager):
         logging.info(f"{app_state}")
 
         for fname, idx in app_state.items():
-            fname = self.strip_leading_zeros(fname)
+            fname = self.strip_leading_zeros(fname).decode("utf-8")
             if fname not in files or idx > files[fname].num_boxes:
                 # Idk about the order of these being guaranteed
                 fst = FileStat(idx)
@@ -55,11 +55,11 @@ class AlgorandStorageManager(StorageManager):
 
         return files
 
-    def strip_leading_zeros(self, name: bytes) -> str:
+    def strip_leading_zeros(self, name: bytes) -> bytes:
         for idx, b in enumerate(name):
             if b != 0:
-                return name[idx:].decode("utf-8")
-        return name
+                return name[idx:]
+        return b""
 
     def create_file(self, name: str, mode: int, dev: int):
         self._create_acct(name, 0)
@@ -91,6 +91,7 @@ class AlgorandStorageManager(StorageManager):
             for idx in range(start_idx, stop_idx):
                 buf += self._read_acct(name, idx)[start_offset:stop_offset]
 
+            buf = buf.strip(bytes(1))
             logging.debug(f"{buf.hex()}")
 
         else:
@@ -110,6 +111,10 @@ class AlgorandStorageManager(StorageManager):
         )
         for idx in range(start_idx, stop_idx + 1):
 
+            if idx > self.files[name].num_boxes:
+                self._create_acct(name, 0)
+                self.files = self.list_files()
+
             try:
                 working_buf = bytearray(
                     buf[idx * self.storage_size : (idx + 1) * self.storage_size]
@@ -118,12 +123,12 @@ class AlgorandStorageManager(StorageManager):
                     logging.debug("applying start")
                     # Partial write, might as well read the whole storage unit
                     working_buf[:start_offset] = self._read_acct(name, idx)[
-                        start_offset:
+                        :start_offset
                     ]
                     logging.debug("applying start2")
                 elif idx == stop_idx and stop_offset > 0:
                     logging.debug("applying stop")
-                    working_buf[stop_offset:] = self._read_acct(name, idx)[:stop_offset]
+                    working_buf[stop_offset:] = self._read_acct(name, idx)[stop_offset:]
                     logging.debug("applying stop2")
 
                 logging.debug(working_buf)
@@ -151,9 +156,9 @@ class AlgorandStorageManager(StorageManager):
         acct_state = self.app_client.get_account_state(acct.lsig.address(), raw=True)
         logging.debug(f"{acct_state}")
         # Make sure the blob is in the right order
-        return b"".join(
-            [acct_state[x.to_bytes(1, "big")][: self.storage_size] for x in range(9)]
-        )
+        return b"".join([acct_state[x.to_bytes(1, "big")] for x in range(9)])[
+            : self.storage_size
+        ]
 
     def _delete_acct(self, name: str, idx: int):
         lsig_signer = self._storage_account(name, idx)
@@ -183,7 +188,7 @@ class AlgorandStorageManager(StorageManager):
         self.app_client.call(
             NFTP.write,
             deets=deets,
-            data=bytes(self.storage_size - len(data)) + data,
+            data=data + bytes(self.storage_size - len(data)),
             storage_account=lsig_signer.lsig.address(),
         )
 
@@ -194,11 +199,8 @@ class AlgorandStorageManager(StorageManager):
         app = cast(NFTP, self.app_client.app)
         try:
             deets = self._file_block_details(name, idx)
-            logging.info(f"deets: {deets}")
             deets.append(self.app_client.app_id)
-            logging.info(f"{app.tmpl_account.template_values}")
             val = app.tmpl_account.template_signer(*deets)
-            logging.info(f"{val}")
         except Exception as e:
             logging.error(f"wat: {e}")
             raise e
