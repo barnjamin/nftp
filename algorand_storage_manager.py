@@ -112,7 +112,7 @@ class AlgorandStorageManager(StorageManager):
         for idx in range(start_idx, stop_idx + 1):
 
             if idx > self.files[name].num_boxes:
-                self._create_acct(name, 0)
+                self._create_acct(name, idx)
                 self.files = self.list_files()
 
             try:
