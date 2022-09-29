@@ -5,6 +5,10 @@
 DIR=`mktemp -d`
 LOG=/tmp/nftp.log
 
+/home/ben/sandbox/sandbox reset
+
+python algorand/contract.py
+
 echo $DIR
 
 echo "mnt--"
