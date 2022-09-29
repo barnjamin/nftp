@@ -41,7 +41,7 @@ class AlgorandStorageManager(StorageManager):
 
             if fname not in files or idx > files[fname].num_boxes:
                 # Idk about the order of these being guaranteed
-                fst = FileStat(idx)
+                fst = FileStat(idx + 1)
                 fst.st_mode = stat.S_IFREG | 0o666
                 fst.st_nlink = 1
                 fst.st_size = self.storage_size * (idx + 1)
@@ -82,6 +82,9 @@ class AlgorandStorageManager(StorageManager):
             )
             for idx in range(start_idx, stop_idx):
                 buf += self._read_box(name, idx)[start_offset:stop_offset]
+
+            logging.debug(f"{buf.hex()}")
+
         else:
             buf = bytes(size)
 
@@ -98,20 +101,28 @@ class AlgorandStorageManager(StorageManager):
             f"writing from {start_idx} : {start_offset} to {stop_idx} : {stop_offset}"
         )
         for idx in range(start_idx, stop_idx + 1):
-            working_buf = bytearray(
-                buf[idx * self.storage_size : (idx + 1) * self.storage_size]
-            )
-            if idx == start_idx and start_offset > 0:
-                # Partial write, might as well read the whole storage unit
-                working_buf[:start_idx] = self._read_box(name, idx)[start_idx:]
-            elif idx == stop_idx and stop_offset > 0:
-                working_buf[stop_idx:] = self._read_box(name, idx)[:stop_idx]
 
-            if len(working_buf) == 0:
-                return
-
-            logging.debug(f"about to write: {working_buf.hex()}")
             try:
+                working_buf = bytearray(
+                    buf[idx * self.storage_size : (idx + 1) * self.storage_size]
+                )
+                if idx == start_idx and start_offset > 0:
+                    logging.debug("applying start")
+                    # Partial write, might as well read the whole storage unit
+                    working_buf[:start_offset] = self._read_box(name, idx)[
+                        start_offset:
+                    ]
+                    logging.debug("applying start2")
+                elif idx == stop_idx and stop_offset > 0:
+                    logging.debug("applying stop")
+                    working_buf[stop_offset:] = self._read_box(name, idx)[:stop_offset]
+                    logging.debug("applying stop2")
+
+                logging.debug(working_buf)
+                if len(working_buf) == 0:
+                    return
+
+                logging.debug(f"about to write: {working_buf.hex()}")
                 self._write_box(name, idx, working_buf)
             except Exception as e:
                 logging.error(f"Failed to write: {e}")
@@ -133,10 +144,12 @@ class AlgorandStorageManager(StorageManager):
             box_response = self.app_client.client.application_box_by_name(
                 self.app_client.app_id, box_name
             )
-            return base64.b64decode(box_response["value"])
+            val = base64.b64decode(box_response["value"])
+            logging.debug(f"val: {val}")
         except Exception as e:
             logging.error(f"Failed to get box: {e}")
             raise e
+        return val
 
     def _delete_box(self, name: bytes, idx: int):
         box_name = self._box_name(name, idx)
@@ -148,6 +161,7 @@ class AlgorandStorageManager(StorageManager):
 
     def _write_box(self, name: bytes, idx: int, data: bytes):
         box_name = self._box_name(name, idx)
+        data += bytes(self.storage_size - len(data))
         logging.debug(f"writing to {box_name.hex()} ({len(data)} bytes)")
         try:
             self.app_client.call(
