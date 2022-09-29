@@ -1,6 +1,4 @@
-from pipes import Template
 from typing import Literal, cast
-from algosdk.abi import ABIType
 from beaker import *
 from pyteal import *
 
@@ -29,8 +27,11 @@ class FileBlockDetails(abi.NamedTuple):
 
 
 class NFTP(Application):
+    files: DynamicApplicationStateValue = DynamicApplicationStateValue(
+        TealType.uint64, max_keys=64
+    )
 
-    data: AccountStateBlob = AccountStateBlob(keys=15)
+    data: AccountStateBlob = AccountStateBlob(keys=9)
     deets: AccountStateValue = AccountStateValue(
         TealType.bytes, descr="Stores a tuple of name && idx for easier lookup"
     )
@@ -40,6 +41,7 @@ class NFTP(Application):
     @opt_in
     def opt_in(self, deets: FileBlockDetails):
         """Opt File Block storage account into app"""
+        fname = ScratchVar(TealType.bytes)
         return Seq(
             self.check_assert_correct_account(deets, Txn.sender()),
             Assert(
@@ -47,12 +49,22 @@ class NFTP(Application):
             ),
             self.data.initialize(),
             self.deets.set(deets.encode()),
+            # Update local listing
+            deets.fname.use(lambda x: fname.store(x.get())),
+            self.files[fname.load()].increment(),
             Approve(),
         )
 
     @close_out
-    def close_out(self):
-        return Approve()
+    def close_out(self, deets: FileBlockDetails):
+        fname = ScratchVar(TealType.bytes)
+        return Seq(
+            deets.fname.use(lambda x: fname.store(x.get())),
+            self.files[fname.load()].decrement(),
+            # Last block for this file, delete it
+            If(self.files[fname.load()] == Int(0), self.files[fname.load()].delete()),
+            Approve(),
+        )
 
     @external(authorize=Authorize.only(Global.creator_address()))
     def delete(self, deets: FileBlockDetails, storage_account: abi.Account):
@@ -153,7 +165,7 @@ def create_and_test():
 
         print("deleting")
         ac.call(NFTP.delete, deets=deets, storage_account=lsig_signer.lsig.address())
-        lsig_client.close_out()
+        lsig_client.close_out(deets=deets)
 
 
 if __name__ == "__main__":

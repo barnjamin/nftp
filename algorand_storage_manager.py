@@ -1,14 +1,19 @@
 import base64
+from typing import cast
 import logging
 import stat
+from algosdk.abi import ABIType
+from algosdk.atomic_transaction_composer import LogicSigTransactionSigner
 import beaker as bkr
 
-from algorand.contract import NFTP
+from algorand.contract import NFTP, FileBlockDetails
 from nftp import StorageManager, FileStat
 
 
 ALGOD_HOST = "http://localhost:4001"
 ALGOD_TOKEN = "a" * 64
+
+storage_deets_codec = ABIType.from_string(str(FileBlockDetails().type_spec()))
 
 
 class AlgorandStorageManager(StorageManager):
@@ -34,6 +39,8 @@ class AlgorandStorageManager(StorageManager):
     def list_files(self) -> dict[str, FileStat]:
         files: dict[str, FileStat] = {}
 
+        app_state = self.app_client.get_application_state()
+
         boxes = self.app_client.client.application_boxes(self.app_client.app_id)
 
         for box in boxes["boxes"]:
@@ -50,13 +57,8 @@ class AlgorandStorageManager(StorageManager):
         return files
 
     def create_file(self, name: str, mode: int, dev: int):
-        self._write_box(name, 0, bytes(self.storage_size))
+        self._create_acct(name, 0)
         self.files = self.list_files()
-        # fst = FileStat()
-        # fst.st_mode = stat.S_IFREG | 0o666
-        # fst.st_nlink = 1
-        # fst.st_size = 0
-        # self.files[name] = fst
 
     def read_file(self, name: str, offset: int, size: int) -> bytes:
         # refreshes our list
@@ -109,13 +111,13 @@ class AlgorandStorageManager(StorageManager):
                 if idx == start_idx and start_offset > 0:
                     logging.debug("applying start")
                     # Partial write, might as well read the whole storage unit
-                    working_buf[:start_offset] = self._read_box(name, idx)[
+                    working_buf[:start_offset] = self._read_acct(name, idx)[
                         start_offset:
                     ]
                     logging.debug("applying start2")
                 elif idx == stop_idx and stop_offset > 0:
                     logging.debug("applying stop")
-                    working_buf[stop_offset:] = self._read_box(name, idx)[:stop_offset]
+                    working_buf[stop_offset:] = self._read_acct(name, idx)[:stop_offset]
                     logging.debug("applying stop2")
 
                 logging.debug(working_buf)
@@ -123,7 +125,7 @@ class AlgorandStorageManager(StorageManager):
                     return
 
                 logging.debug(f"about to write: {working_buf.hex()}")
-                self._write_box(name, idx, working_buf)
+                self._write_acct(name, idx, working_buf)
             except Exception as e:
                 logging.error(f"Failed to write: {e}")
                 raise e
@@ -132,52 +134,101 @@ class AlgorandStorageManager(StorageManager):
         # refresh cache
         self.file_exists(name)
         for idx in range(self.files[name].num_boxes + 1):
-            self._delete_box(name, idx)
+            self._delete_acct(name, idx)
 
         del self.files[name]
 
-    def _read_box(self, name: str, idx: int) -> bytes:
-        logging.debug(f"_read_box: {name} {idx}")
-        box_name = self._box_name(name, idx)
-        logging.debug(f"getting app box: {name} {idx}")
-        try:
-            box_response = self.app_client.client.application_box_by_name(
-                self.app_client.app_id, box_name
-            )
-            val = base64.b64decode(box_response["value"])
-            logging.debug(f"val: {val}")
-        except Exception as e:
-            logging.error(f"Failed to get box: {e}")
-            raise e
-        return val
-
-    def _delete_box(self, name: bytes, idx: int):
-        box_name = self._box_name(name, idx)
-        self.app_client.call(
-            NFTP.delete_data,
-            box_name=box_name,
-            boxes=[[self.app_client.app_id, box_name]],
+    def _read_acct(self, name: str, idx: int) -> bytes:
+        acct_state = self.app_client.get_account_state(
+            self._acct_name(name, idx), raw=True
+        )
+        # Make sure the blob is in the right order
+        return b"".join(
+            [acct_state[x.to_bytes(1, "big")][: self.storage_size] for x in range(9)]
         )
 
-    def _write_box(self, name: bytes, idx: int, data: bytes):
-        box_name = self._box_name(name, idx)
-        data += bytes(self.storage_size - len(data))
-        logging.debug(f"writing to {box_name.hex()} ({len(data)} bytes)")
-        try:
-            self.app_client.call(
-                NFTP.put_data,
-                box_name=box_name,
-                data=data,
-                boxes=[[self.app_client.app_id, box_name]],
-            )
-        except Exception as e:
-            logging.error(f"Failed to write in app call: {e}")
-            raise e
+    def _delete_acct(self, name: str, idx: int):
+        lsig_signer = self._storage_account(name, idx)
+        lsig_client = self.app_client.prepare(lsig_signer)
 
-    def _box_name(self, name: str, idx: int) -> bytes:
-        return name.encode() + idx.to_bytes(4, "big")
+        deets = self._file_block_details(name, idx)
 
-    def _box_seq(self, box_name: bytes) -> tuple[str, int]:
-        fname = box_name[:-4].decode("utf-8")
-        idx = int.from_bytes(box_name[-4:], "big")
-        return [fname, idx]
+        self.app_client.call(
+            NFTP.delete, deets=deets, storage_account=lsig_signer.lsig.address()
+        )
+        lsig_client.close_out()
+
+    def _create_acct(self, name: str, idx: int):
+        lsig_signer = self._storage_account(name, idx)
+        lsig_client = self.app_client.prepare(lsig_signer)
+        deets = self._file_block_details(name, idx)
+        lsig_client.opt_in(deets)
+
+    def _write_acct(self, name: str, idx: int, data: bytes):
+        lsig_signer = self._storage_account(name, idx)
+        deets = self._file_block_details(name, idx)
+        self.app_client.call(
+            NFTP.write,
+            deets=deets,
+            data=data,
+            storage_account=lsig_signer.lsig.address(),
+        )
+
+    def _file_block_details(self, name: str, idx: int) -> list[str | int]:
+        return [bytes(32 - len(name)) + name.encode(), idx]
+
+    def _storage_account(self, name: str, idx: int) -> LogicSigTransactionSigner:
+        app = cast(NFTP, self.app_client.app)
+        return app.tmpl_account.template_signer(
+            *self._file_block_details(name, idx), self.app_client.app_id
+        )
+
+    def _acct_addr_seq(self, addr: str) -> tuple[str, int]:
+        state = self.app_client.get_account_state(addr)
+        return storage_deets_codec.decode(state["deets"])
+
+    # def _read_box(self, name: str, idx: int) -> bytes:
+    #    logging.debug(f"_read_box: {name} {idx}")
+    #    box_name = self._box_name(name, idx)
+    #    logging.debug(f"getting app box: {name} {idx}")
+    #    try:
+    #        box_response = self.app_client.client.application_box_by_name(
+    #            self.app_client.app_id, box_name
+    #        )
+    #        val = base64.b64decode(box_response["value"])
+    #        logging.debug(f"val: {val}")
+    #    except Exception as e:
+    #        logging.error(f"Failed to get box: {e}")
+    #        raise e
+    #    return val
+
+    # def _delete_box(self, name: bytes, idx: int):
+    #    box_name = self._box_name(name, idx)
+    #    self.app_client.call(
+    #        NFTP.delete_data,
+    #        box_name=box_name,
+    #        boxes=[[self.app_client.app_id, box_name]],
+    #    )
+
+    # def _write_box(self, name: bytes, idx: int, data: bytes):
+    #    box_name = self._box_name(name, idx)
+    #    data += bytes(self.storage_size - len(data))
+    #    logging.debug(f"writing to {box_name.hex()} ({len(data)} bytes)")
+    #    try:
+    #        self.app_client.call(
+    #            NFTP.put_data,
+    #            box_name=box_name,
+    #            data=data,
+    #            boxes=[[self.app_client.app_id, box_name]],
+    #        )
+    #    except Exception as e:
+    #        logging.error(f"Failed to write in app call: {e}")
+    #        raise e
+
+    # def _box_name(self, name: str, idx: int) -> bytes:
+    #    return name.encode() + idx.to_bytes(4, "big")
+
+    # def _box_seq(self, box_name: bytes) -> tuple[str, int]:
+    #    fname = box_name[:-4].decode("utf-8")
+    #    idx = int.from_bytes(box_name[-4:], "big")
+    #    return [fname, idx]
