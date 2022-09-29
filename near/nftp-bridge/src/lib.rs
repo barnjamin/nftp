@@ -4,6 +4,7 @@
 //#![allow(dead_code)]
 
 use {
+    serde::Serialize,
     near_sdk::{
         borsh::{
             self,
@@ -11,7 +12,8 @@ use {
             BorshSerialize,
         },
         collections::{
-            UnorderedSet,
+            LookupMap,
+            LazyOption,
         },
         env,
         json_types::{
@@ -23,11 +25,46 @@ use {
     std::str,
 };
 
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct NFTPFile {
+    data:      Vec<u8>,
+}
+
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct NFTPDir {
+    data:       LookupMap<String, LazyOption<Node>>
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub enum NodeData {
+    File(NFTPFile),
+    Dir(NFTPDir),
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct Node {
+    path: String,
+    data: NodeData
+}
+
+impl From<NFTPFile> for NodeData {
+    fn from(v: NFTPFile) -> Self {
+        NodeData::File(v)
+    }
+}
+
+impl From<NFTPDir> for NodeData {
+    fn from(v: NFTPDir) -> Self {
+        NodeData::Dir(v)
+    }
+}
+
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct NFTPBridge {
     booted:               bool,
     owner_pk:             PublicKey,
+    root:                 Node,
 }
 
 impl Default for NFTPBridge {
@@ -35,6 +72,10 @@ impl Default for NFTPBridge {
         Self {
             booted:               false,
             owner_pk:             env::signer_account_pk(),
+            root:                 Node {
+                path: "/".to_string(),
+                data: NodeData::Dir(NFTPDir { data : LookupMap::new(b"/") } )
+            }
         }
     }
 }
