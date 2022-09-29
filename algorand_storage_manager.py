@@ -44,7 +44,7 @@ class AlgorandStorageManager(StorageManager):
         logging.info(f"{app_state}")
 
         for fname, idx in app_state.items():
-            fname = self.strip_zeros(fname)
+            fname = self.strip_leading_zeros(fname)
             if fname not in files or idx > files[fname].num_boxes:
                 # Idk about the order of these being guaranteed
                 fst = FileStat(idx)
@@ -55,11 +55,10 @@ class AlgorandStorageManager(StorageManager):
 
         return files
 
-    def strip_zeros(self, name: bytes) -> str:
+    def strip_leading_zeros(self, name: bytes) -> str:
         for idx, b in enumerate(name):
             if b != 0:
                 return name[idx:].decode("utf-8")
-
         return name
 
     def create_file(self, name: str, mode: int, dev: int):
