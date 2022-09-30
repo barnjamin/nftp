@@ -90,7 +90,7 @@ class AlgorandStorageManager(StorageManager):
             )
             for box_idx in range(start_box, stop_box):
 
-                working_buf = self._read_acct(name, idx)
+                working_buf = self._read_acct(name, box_idx)
                 start, stop = 0, self.storage_size
 
                 if box_idx == start_box and start_offset > 0:
