@@ -2,8 +2,8 @@
 
 #set -euo pipefail
 
-DIR=`mktemp -d`
-LOG=/tmp/nftp.log
+export DIR=`mktemp -d`
+export LOG=/tmp/nftp.log
 
 /home/ben/sandbox/sandbox reset
 
@@ -37,6 +37,18 @@ echo "cp--"
 
 echo "cat--"
 cat $DIR/README.md
+cat $LOG
+echo "" > $LOG
+echo "cat--"
+
+echo "cp--"
+cp data.mp3 $DIR
+cat $LOG
+echo "" > $LOG
+echo "cp--"
+
+echo "cat--"
+cat $DIR/data.mp3
 cat $LOG
 echo "" > $LOG
 echo "cat--"
