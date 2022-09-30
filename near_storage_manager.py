@@ -2,18 +2,28 @@ import base64
 from typing import cast
 import logging
 import stat
+import near_api
 
 from nftp import StorageManager, FileStat
 
 
 class NearStorageManager(StorageManager):
-    def __init__(self, storage_size: int = 1024):
+    def __init__(self, args, storage_size: int = 1024):
+        self.args = args
         self.storage_size = storage_size
+
+        self.near_provider = near_api.providers.JsonProvider(args.near_url)
+        self.key_pair = near_api.signer.KeyPair(args.near_signer_key)
+        self.signer = near_api.signer.Signer(args.near_signer, self.key_pair)
+        self.account = near_api.account.Account(self.near_provider, self.signer)
+
+        # out = account.function_call(contract_id, "counter_set", args)
+
         super().__init__()
 
     @staticmethod
     def factory(args) -> "NearStorageManager":
-        return NearStorageManager()
+        return NearStorageManager(args)
 
     def list_files(self) -> dict[str, FileStat]:
         logging.info(f"{app_state}")

@@ -17,9 +17,11 @@ def main():
     parser.add_argument("--algorand_appid", type=int, help="algorand appid", default=1)
 
     parser.add_argument("--near", action="store_true", help="run near engine")
-    parser.add_argument(
-        "--near_account", type=str, help="near account", default="near.test"
-    )
+    parser.add_argument("--near_contract", type=str, help="near contract", default="test.near")
+    parser.add_argument("--near_signer", type=str, help="near signer", default="")
+    parser.add_argument("--near_url", type=str, help="near rpc", default="http://localhost:3030")
+    parser.add_argument("--near_network", type=str, help="near network", default="sandbox")
+    parser.add_argument("--near_signer_key", type=str, help="near pk", default="")
 
     args, unknown = parser.parse_known_args()
 
