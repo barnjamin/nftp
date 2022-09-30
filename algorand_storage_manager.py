@@ -26,14 +26,14 @@ class AlgorandStorageManager(StorageManager):
         super().__init__()
 
     @staticmethod
-    def from_app_id(app_id: int) -> "AlgorandStorageManager":
+    def factory(args) -> "AlgorandStorageManager":
         # TODO: Cheating
         acct = bkr.sandbox.get_accounts().pop()
         algod_client = bkr.sandbox.clients.get_algod_client()
 
         return AlgorandStorageManager(
             app_client=bkr.client.application_client.ApplicationClient(
-                algod_client, NFTP(), signer=acct.signer, app_id=app_id
+                algod_client, NFTP(), signer=acct.signer, app_id=args.algorand_appid
             )
         )
 

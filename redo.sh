@@ -12,7 +12,7 @@ python algorand/contract.py
 echo $DIR
 
 echo "mnt--"
-python main.py $DIR 
+python main.py --algorand $DIR 
 cat $LOG
 echo "" > $LOG
 echo "mnt--"
