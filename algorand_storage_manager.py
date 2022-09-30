@@ -79,17 +79,27 @@ class AlgorandStorageManager(StorageManager):
             if offset + size > slen:
                 size = slen - offset
 
-            start_idx = offset // self.storage_size
+            start_box = offset // self.storage_size
             start_offset = offset % self.storage_size
 
-            stop_idx = size // self.storage_size
-            stop_offset = self.storage_size - (size % self.storage_size)
+            stop_box = (size + offset) // self.storage_size
+            stop_offset = (size + offset) % self.storage_size
 
             logging.debug(
-                "{} {} {} {}".format(start_idx, start_offset, stop_idx, stop_offset)
+                "{} {} {} {}".format(start_box, start_offset, stop_box, stop_offset)
             )
-            for idx in range(start_idx, stop_idx):
-                buf += self._read_acct(name, idx)[start_offset:stop_offset]
+            for box_idx in range(start_box, stop_box):
+
+                working_buf = self._read_acct(name, idx)
+                start, stop = 0, self.storage_size
+
+                if box_idx == start_box and start_offset > 0:
+                    start = start_offset
+
+                if box_idx == stop_box and stop_offset > 0:
+                    stop = self.storage_size - stop_offset
+
+                buf += working_buf[start:stop]
 
             buf = buf.strip(bytes(1))
         else:
@@ -102,8 +112,7 @@ class AlgorandStorageManager(StorageManager):
         start_offset = offset % self.storage_size
 
         stop_box = (offset + len(buf)) // self.storage_size
-        stop_offset = self.storage_size - (offset + len(buf)) % self.storage_size
-
+        stop_offset = (offset + len(buf)) % self.storage_size
 
         num_boxes_to_write = (stop_box - start_box) + 1
 
@@ -111,32 +120,34 @@ class AlgorandStorageManager(StorageManager):
             f"writing {len(buf)} bytes from {start_box} : {start_offset} to {stop_box} : {stop_offset}"
         )
 
-
         cursor = 0
         for idx in range(num_boxes_to_write):
             box_idx = start_box + idx
 
-            logging.info("a")
             if box_idx >= self.files[name].num_boxes:
-                logging.info("b")
                 self._create_acct(name, box_idx)
                 self.files = self.list_files()
 
-            logging.info("c")
             try:
-                consumes = self.storage_size
-                to_write = buf[cursor:cursor+consumes] 
+                # copy  everything from cursor on
+
+                to_write = buf[cursor:]
 
                 if box_idx == start_box and start_offset > 0:
-                    # Partial write, might as well read the whole storage unit
-                    mask = self._read_acct(name, box_idx)
-                    to_write = mask[:start_offset] +to_write[-start_offset:]
+                    curr_data = self._read_acct(name, box_idx)
+                    # take -start_offset bytes from the to_write buffer since we want to fill out
+                    to_write = curr_data[:start_offset] + to_write[start_offset:]
+                    # update our cursor to show we read this many bytes
+                    cursor += start_offset
 
                 elif box_idx == stop_box and stop_offset > 0:
-                    mask = self._read_acct(name, box_idx)
-                    to_write = to_write[:stop_offset] + mask[stop_offset:]
+                    curr_data = self._read_acct(name, box_idx)
+                    to_write = to_write[:stop_offset] + curr_data[stop_offset:]
+                    cursor += stop_offset
 
-                logging.info(f"{start_offset}, {cursor}, {consumes}, {stop_offset}")
+                to_write = to_write[: self.storage_size]
+
+                logging.info(f"{box_idx}: {start_offset}:{stop_offset}, {cursor}")
 
                 if len(to_write) == 0:
                     return cursor
@@ -147,7 +158,7 @@ class AlgorandStorageManager(StorageManager):
                 logging.error(f"Failed to write: {e}")
                 raise e
 
-        return len(buf) 
+        return len(buf)
 
     def delete_file(self, name: str):
         # refresh cache
