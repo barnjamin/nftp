@@ -12,7 +12,7 @@ python algorand/contract.py
 echo $DIR
 
 echo "mnt--"
-python main.py $DIR 
+python main.py --algorand $DIR 
 cat $LOG
 echo "" > $LOG
 echo "mnt--"
@@ -37,18 +37,6 @@ echo "cp--"
 
 echo "cat--"
 cat $DIR/README.md
-cat $LOG
-echo "" > $LOG
-echo "cat--"
-
-echo "cp--"
-cp data.mp3 $DIR
-cat $LOG
-echo "" > $LOG
-echo "cp--"
-
-echo "cat--"
-cat $DIR/data.mp3 | wc -c
 cat $LOG
 echo "" > $LOG
 echo "cat--"
