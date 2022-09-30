@@ -92,54 +92,62 @@ class AlgorandStorageManager(StorageManager):
                 buf += self._read_acct(name, idx)[start_offset:stop_offset]
 
             buf = buf.strip(bytes(1))
-            logging.debug(f"{buf.hex()}")
-
         else:
             buf = bytes(size)
 
         return buf
 
     def write_file(self, name: str, offset: int, buf: bytes):
-        start_idx = offset // self.storage_size
+        start_box = offset // self.storage_size
         start_offset = offset % self.storage_size
 
-        stop_idx = (offset + len(buf)) // self.storage_size
-        stop_offset = (offset + len(buf)) % self.storage_size
+        stop_box = (offset + len(buf)) // self.storage_size
+        stop_offset = self.storage_size - (offset + len(buf)) % self.storage_size
+
+
+        num_boxes_to_write = (stop_box - start_box) + 1
 
         logging.debug(
-            f"writing {len(buf)} bytes from {start_idx} : {start_offset} to {stop_idx} : {stop_offset}"
+            f"writing {len(buf)} bytes from {start_box} : {start_offset} to {stop_box} : {stop_offset}"
         )
-        for idx in range(stop_idx - start_idx):
-            box_idx = start_idx + idx
+
+
+        cursor = 0
+        for idx in range(num_boxes_to_write):
+            box_idx = start_box + idx
+
+            logging.info("a")
             if box_idx >= self.files[name].num_boxes:
+                logging.info("b")
                 self._create_acct(name, box_idx)
                 self.files = self.list_files()
 
+            logging.info("c")
             try:
-                logging.debug(f"{buf.hex()}")
-                working_buf = bytearray(
-                    buf[idx * self.storage_size : (idx + 1) * self.storage_size]
-                )
-                logging.debug(f"working buf size: {len(working_buf)}")
-                if box_idx == start_idx and start_offset > 0:
+                consumes = self.storage_size
+                to_write = buf[cursor:cursor+consumes] 
+
+                if box_idx == start_box and start_offset > 0:
                     # Partial write, might as well read the whole storage unit
-                    working_buf[:start_offset] = self._read_acct(name, box_idx)[
-                        start_offset:
-                    ]
-                elif box_idx == stop_idx and stop_offset > 0:
-                    working_buf[stop_offset:] = self._read_acct(name, box_idx)[
-                        :stop_offset
-                    ]
+                    mask = self._read_acct(name, box_idx)
+                    to_write = mask[:start_offset] +to_write[-start_offset:]
 
-                if len(working_buf) == 0:
-                    return 0
+                elif box_idx == stop_box and stop_offset > 0:
+                    mask = self._read_acct(name, box_idx)
+                    to_write = to_write[:stop_offset] + mask[stop_offset:]
 
-                logging.debug(f"about to write: {working_buf.hex()}")
-                self._write_acct(name, box_idx, working_buf)
+                logging.info(f"{start_offset}, {cursor}, {consumes}, {stop_offset}")
+
+                if len(to_write) == 0:
+                    return cursor
+
+                logging.debug(f"about to write: {len(to_write)}")
+                self._write_acct(name, box_idx, to_write)
             except Exception as e:
                 logging.error(f"Failed to write: {e}")
                 raise e
-        return len(buf)
+
+        return len(buf) 
 
     def delete_file(self, name: str):
         # refresh cache
@@ -154,7 +162,6 @@ class AlgorandStorageManager(StorageManager):
         logging.debug(f"{acct.lsig.address()}")
 
         acct_state = self.app_client.get_account_state(acct.lsig.address(), raw=True)
-        logging.debug(f"{acct_state}")
         # Make sure the blob is in the right order
         return b"".join([acct_state[x.to_bytes(1, "big")] for x in range(9)])[
             : self.storage_size
@@ -198,7 +205,7 @@ class AlgorandStorageManager(StorageManager):
             self.app_client.call(
                 NFTP.write,
                 deets=deets,
-                data=data + bytes(self.storage_size - len(data)),
+                data=data,
                 storage_account=lsig_signer.lsig.address(),
             )
         except Exception as e:
