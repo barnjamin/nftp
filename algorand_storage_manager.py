@@ -6,19 +6,19 @@ from algosdk.abi import ABIType
 from algosdk.atomic_transaction_composer import LogicSigTransactionSigner
 import beaker as bkr
 
-from algorand.contract import NFTP, FileBlockDetails
+import algorand.contract as app 
 from nftp import StorageManager, FileStat
 
 
 ALGOD_HOST = "http://localhost:4001"
 ALGOD_TOKEN = "a" * 64
 
-storage_deets_codec = ABIType.from_string(str(FileBlockDetails().type_spec()))
+storage_deets_codec = ABIType.from_string(str(app.FileBlockDetails().type_spec()))
 
 
 class AlgorandStorageManager(StorageManager):
     def __init__(
-        self, app_client: bkr.client.ApplicationClient, storage_size: int = 1024
+        self, app_client: bkr.client.ApplicationClient, storage_size: int = app.STORAGE_SIZE 
     ):
         self.app_client = app_client
         self.app_client.build()
@@ -27,18 +27,16 @@ class AlgorandStorageManager(StorageManager):
 
     @staticmethod
     def factory(args) -> "AlgorandStorageManager":
-        # TODO: Cheating
         acct = bkr.sandbox.get_accounts().pop()
         algod_client = bkr.sandbox.clients.get_algod_client()
 
         return AlgorandStorageManager(
             app_client=bkr.client.application_client.ApplicationClient(
-                algod_client, NFTP(), signer=acct.signer, app_id=args.algorand_appid
+                algod_client, app.nftp, signer=acct.signer, app_id=args.algorand_appid
             )
         )
 
     def list_files(self) -> dict[str, FileStat]:
-
         app_state = self.app_client.get_application_state(raw=True)
         logging.info(f"{app_state}")
 
@@ -89,7 +87,6 @@ class AlgorandStorageManager(StorageManager):
                 "{} {} {} {}".format(start_box, start_offset, stop_box, stop_offset)
             )
             for box_idx in range(start_box, stop_box):
-
                 working_buf = self._read_acct(name, box_idx)
                 start, stop = 0, self.storage_size
 
@@ -191,7 +188,6 @@ class AlgorandStorageManager(StorageManager):
 
     def _create_acct(self, name: str, idx: int):
         try:
-
             lsig_signer = self._storage_account(name, idx)
             lsig_addr = lsig_signer.lsig.address()
 
