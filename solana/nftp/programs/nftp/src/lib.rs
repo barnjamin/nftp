@@ -7,7 +7,7 @@ declare_id!("EdPCWzayyrWEzFLAjkaVjKivGcSVRKJYdcT7Uqf2bTxd");
 pub mod nftp {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    pub fn initialize(_ctx: Context<Initialize>) -> Result<()> {
         Ok(())
     }
 
@@ -48,11 +48,14 @@ impl FileChunk {
 }
 
 #[derive(Accounts)]
+#[instruction(name: String)]
 pub struct CreateFile<'info> {
     #[account(
         init,
         payer=authority,
         space=8 + 128 + 32,
+        seeds=[name.as_ref()],
+        bump,
     )]
     pub file: Account<'info, File>,
     #[account(mut)]
