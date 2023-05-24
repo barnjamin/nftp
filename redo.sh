@@ -6,51 +6,68 @@ export DIR=`mktemp -d`
 export LOG=/tmp/nftp.log
 
 /home/ben/sandbox/sandbox reset
-
-python algorand/contract.py
+python algorand/client.py
 
 echo $DIR
 
-echo "mnt--"
+echo "" 
+
+echo "--mnt--"
 python main.py --algorand $DIR 
 cat $LOG
 echo "" > $LOG
-echo "mnt--"
-echo "ls--"
+echo "--mnt--"
+
+echo ""
+
+echo "--ls--"
 ls $DIR
 cat $LOG
 echo "" > $LOG
-echo "ls--"
+echo "--ls--"
 if [ -f $DIR/README.md ]; then
-    echo "rm--"
+    echo "--rm--"
     rm $DIR/README.md
     cat $LOG
     echo "" > $LOG
-    echo "rm--"
+    echo "--rm--"
 fi
 
-echo "cp--"
+
+echo ""
+
+echo "--cp--"
+
+cat $LOG
 cp README.md $DIR
 cat $LOG
 echo "" > $LOG
-echo "cp--"
+echo "--cp--"
 
-echo "cat--"
+echo ""
+
+echo "--cat--"
 cat $DIR/README.md
 cat $LOG
 echo "" > $LOG
-echo "cat--"
+echo "--cat--"
 
-echo "cp--"
+echo ""
+
+echo "--cp--"
 cp data.mp3 $DIR
 cat $LOG
 echo "" > $LOG
-echo "cp--"
+echo "--cp--"
 
-echo "cat--"
+echo ""
+
+echo "--cat--"
 cat $DIR/data.mp3
 cat $LOG
 echo "" > $LOG
-echo "cat--"
+echo "--cat--"
+
+echo ""
 
 echo $DIR

@@ -49,8 +49,6 @@ class NearStorageManager(StorageManager):
 
         #        slen = self.files[name].num_boxes * self.storage_size
 
-        logging.debug(f"read file: {slen}")
-
         buf = b""
         #        if offset < slen:
         #            if offset + size > slen:

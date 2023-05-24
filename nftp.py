@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import logging
-import stat, errno
+import stat
+import errno
 import fuse
 from fuse import Fuse
 
@@ -10,8 +11,9 @@ fuse.fuse_python_api = (0, 2)
 class FileStat(fuse.Stat):
     """data structure returned from stat requests on files"""
 
-    def __init__(self, num_boxes: int):
-        self.num_boxes = num_boxes
+    def __init__(self, hash: bytes, num_boxes: int):
+        self.__hash = hash
+        self.__num_boxes = num_boxes
 
         # permissions
         self.st_mode = 0
@@ -67,7 +69,7 @@ class StorageManager(ABC):
         ...
 
     @abstractmethod
-    def write_file(self, name: str, offset: int, buf: int):
+    def write_file(self, name: str, offset: int, buf: bytes):
         ...
 
     @abstractmethod
@@ -93,8 +95,10 @@ class NftpFS(Fuse):
     def getattr(self, path: str):
         logging.debug(f"getattr for {path}")
 
+        fst = FileStat(b"", 0)
+        logging.debug(f"{fst}")
+
         if path == "/":
-            fst = FileStat(0)
             fst.st_mode = stat.S_IFDIR | 0o755
             fst.st_nlink = 2
             return fst
@@ -106,6 +110,7 @@ class NftpFS(Fuse):
             except Exception as e:
                 logging.error("getattr exception: " + e.__str__())
             return fst
+
         else:
             return -errno.ENOENT
 
@@ -141,7 +146,7 @@ class NftpFS(Fuse):
 
         return buf
 
-    def write(self, path: str, buf: int, offset: int) -> int:
+    def write(self, path: str, buf: bytes, offset: int) -> int:
         logging.debug(f"write: {path}")
 
         try:
@@ -155,17 +160,16 @@ class NftpFS(Fuse):
         logging.debug(f"unlink: {path}")
 
         try:
-            self.storage_manager.delete(path[1:])
+            self.storage_manager.delete_file(path[1:])
         except Exception as e:
             logging.error("unlink error: " + e.__str__())
 
     def mknod(self, path, mode, dev):
-        logging.debug(f"mknod: {path} {mode} {dev}, {type(mode)}, {type(dev)}")
-        self.storage_manager.create_file(path[1:], mode, dev)
-
-    def unlink(self, path):
-        logging.debug(f"unlink: {path}")
-        self.storage_manager.delete_file(path[1:])
+        try:
+            logging.debug(f"mknod: {path} {mode} {dev}, {type(mode)}, {type(dev)}")
+            self.storage_manager.create_file(path[1:])
+        except Exception as e:
+            logging.debug(f"failed to mknod: {e}")
 
     def readlink(self, path):
         logging.debug(f"readlink: {path}")
@@ -173,7 +177,7 @@ class NftpFS(Fuse):
         # return os.readlink("." + path)
 
     def copy_file_range(self):
-        logging.debug(f"copy file range")
+        logging.debug("copy file range")
 
     def rmdir(self, path):
         logging.debug(f"readlink: {path}")
@@ -220,44 +224,44 @@ class NftpFS(Fuse):
         logging.debug(f"utime: {path, times}")
 
     # def release(self):
-    #    logging.debug("release")
+    #   logging.debug("release")
     # def statfs(self):
-    #    logging.debug("statfs")
+    #   logging.debug("statfs")
     # def fsync(self):
-    #    logging.debug("fsync")
+    #   logging.debug("fsync")
     # def create(self):
-    #    logging.debug("create")
+    #   logging.debug("create")
     # def opendir(self):
-    #    logging.debug("opendir")
+    #   logging.debug("opendir")
     # def releasedir(self):
-    #    logging.debug("releasedir")
+    #   logging.debug("releasedir")
     # def fsyncdir(self):
-    #    logging.debug("fsyncdir")
+    #   logging.debug("fsyncdir")
     # def flush(self):
-    #    logging.debug("flushdir")
+    #   logging.debug("flushdir")
     # def fgetattr(self):
-    #    logging.debug("fgetattr")
+    #   logging.debug("fgetattr")
     # def ftruncate(self):
-    #    logging.debug("ftruncate")
+    #   logging.debug("ftruncate")
     # def getxattr(self):
-    #    logging.debug("getxattr")
+    #   logging.debug("getxattr")
     # def listxattr(self):
-    #    logging.debug("listxattr")
+    #   logging.debug("listxattr")
     # def setxattr(self):
-    #    logging.debug("setxattr")
+    #   logging.debug("setxattr")
     # def removexattr(self):
-    #    logging.debug("removexattr")
+    #   logging.debug("removexattr")
     # def access(self):
-    #    logging.debug("access")
+    #   logging.debug("access")
     # def lock(self):
-    #    logging.debug("lock")
+    #   logging.debug("lock")
     # def utimens(self):
-    #    logging.debug("utimens")
+    #   logging.debug("utimens")
     # def bmap(self):
-    #    logging.debug("bmap")
+    #   logging.debug("bmap")
     # def fsdestroy(self):
-    #    logging.debug("fsdestroy")
+    #   logging.debug("fsdestroy")
     # def ioctl(self):
-    #    logging.debug("ioctl")
+    #   logging.debug("ioctl")
     # def poll(self):
-    #    logging.debug("poll")
+    #   logging.debug("poll")
