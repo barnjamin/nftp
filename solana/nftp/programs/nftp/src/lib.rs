@@ -2,7 +2,6 @@ use anchor_lang::prelude::*;
 
 declare_id!("EdPCWzayyrWEzFLAjkaVjKivGcSVRKJYdcT7Uqf2bTxd");
 
-
 #[program]
 pub mod nftp {
     use super::*;
@@ -11,17 +10,20 @@ pub mod nftp {
         Ok(())
     }
 
-    pub fn create_file(ctx: Context<CreateFile>, name: String)->Result<()> {
+    pub fn create_file(ctx: Context<CreateFile>, name: String) -> Result<()> {
         ctx.accounts.file.create(name);
         Ok(())
     }
-    pub fn write_chunk(ctx: Context<WriteFileChunk>, name: String, idx: u64,  data: [u8;512]) -> Result<()> {
+    pub fn write_chunk(
+        ctx: Context<WriteFileChunk>,
+        name: String,
+        idx: u64,
+        data: [u8; 512],
+    ) -> Result<()> {
         ctx.accounts.file_chunk.data = data;
         Ok(())
     }
 }
-
-
 
 #[account]
 pub struct File {
@@ -33,8 +35,8 @@ pub struct File {
 impl File {
     pub const MAX_NAME_LENGTH: u8 = 128;
     fn create(&mut self, name: String) {
-       self.name = name; 
-       self.bitmap = [0; 32];
+        self.name = name;
+        self.bitmap = [0; 32];
     }
 }
 
@@ -76,9 +78,8 @@ pub struct WriteFileChunk<'info> {
     pub file_chunk: Account<'info, FileChunk>,
     #[account(mut)]
     pub authority: Signer<'info>,
-    pub system_program: Program<'info, System>
+    pub system_program: Program<'info, System>,
 }
-
 
 #[derive(Accounts)]
 pub struct Initialize {}
