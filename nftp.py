@@ -12,8 +12,8 @@ class FileStat(fuse.Stat):
     """data structure returned from stat requests on files"""
 
     def __init__(self, hash: bytes, num_boxes: int):
-        self.__hash = hash
-        self.__num_boxes = num_boxes
+        self.hash = hash
+        self.num_boxes = num_boxes
 
         # permissions
         self.st_mode = 0
@@ -96,7 +96,7 @@ class NftpFS(Fuse):
         logging.debug(f"getattr for {path}")
 
         fst = FileStat(b"", 0)
-        logging.debug(f"{fst}")
+        logging.debug(f"{fst.__dict__}")
 
         if path == "/":
             fst.st_mode = stat.S_IFDIR | 0o755

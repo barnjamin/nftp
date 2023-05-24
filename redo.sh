@@ -20,6 +20,8 @@ echo "--mnt--"
 
 echo ""
 
+exit 0
+
 echo "--ls--"
 ls $DIR
 cat $LOG

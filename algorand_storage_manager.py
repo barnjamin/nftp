@@ -2,6 +2,7 @@ import logging
 import stat
 from hashlib import sha256
 from algosdk.transaction import PaymentTxn
+from algosdk.abi import ABIType
 from algosdk.atomic_transaction_composer import (
     TransactionWithSigner,
 )
@@ -14,6 +15,10 @@ from nftp import StorageManager, FileStat
 ALGOD_HOST = "http://localhost:4001"
 ALGOD_TOKEN = "a" * 64
 
+
+
+
+file_meta_codec = ABIType.from_string(str(app.FileMeta().type_spec()))
 
 def chunk_key(name: bytes, idx: int) -> bytes:
     return name + idx.to_bytes(8, "big")
@@ -68,10 +73,12 @@ class ClientFile:
 
 def get_bitmap(bm: bytes) -> dict[int, bool]:
     bitmap = {}
+    logging.debug(f"{bm}")
+    logging.debug(f"{bytes(bm).hex()}")
     for byte_idx, b in enumerate(bm):
         for bit_idx in range(8):
-            if b >> bit_idx > 0:
-                bitmap[byte_idx * 8 + bit_idx] = True
+            if b & (1 << bit_idx) > 0:
+                bitmap[byte_idx * 8 + (7 - bit_idx)] = True
     return bitmap
 
 
@@ -104,12 +111,11 @@ class AlgorandStorageManager(StorageManager):
 
         files: dict[str, FileStat] = {}
         for fname in fnames:
-            md = self.app_client.get_box_contents(fname)
+            bm, name = file_meta_codec.decode(self.app_client.get_box_contents(fname))
 
-            bitmap = get_bitmap(md[:32])
-            name = md[36:].decode()
-
-            num_boxes = len(bitmap.keys())
+            bitmap = get_bitmap(bm)
+            logging.debug(f"{bitmap}")
+            num_boxes = len(list(bitmap.keys()))
             if fname not in files or num_boxes > files[name].num_boxes:
                 # Idk about the order of these being guaranteed
                 fst = FileStat(fname, num_boxes)
@@ -125,7 +131,7 @@ class AlgorandStorageManager(StorageManager):
         try:
             self._create_file(name)
             self.files = self.list_files()
-            logging.debug(f"{self.files}")
+            logging.debug(f"{list(self.files.keys())}")
         except Exception as e:
             logging.debug(f"Failed to create: {e}")
 
@@ -152,7 +158,7 @@ class AlgorandStorageManager(StorageManager):
 
             hash = sha256(name.encode()).digest()
 
-            for box_idx in range(start_box, stop_box - 1):
+            for box_idx in range(start_box, stop_box):
                 working_buf = self._read_box(hash, box_idx)
                 start, stop = 0, self.storage_size
 
@@ -228,8 +234,7 @@ class AlgorandStorageManager(StorageManager):
         del self.files[name]
 
     def _create_file(self, name: str):
-        # TODO: making a fake file with default 2048 size to cover mbr
-        f = ClientFile(name, bytes(2**11))
+        f = ClientFile(name, bytes(0))
 
         # Create the file entry, paying for storage
         self.app_client.call(
