@@ -262,7 +262,6 @@ class Xmp(Fuse):
 
 
 def main():
-
     usage = (
         """
 Userspace nullfs-alike: mirror the filesystem tree from some point on.

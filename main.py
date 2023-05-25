@@ -1,9 +1,9 @@
 from nftp import NftpFS
 from algorand_storage_manager import AlgorandStorageManager
-from near_storage_manager import NearStorageManager
 
 import fuse
 from fuse import Fuse
+
 import logging
 import argparse
 
@@ -28,10 +28,10 @@ def main():
     if args.algorand:
         storage_manager = AlgorandStorageManager.factory(args)
 
-    if args.near:
-        storage_manager = NearStorageManager.factory(args)
+    # if args.near:
+    #    storage_manager = NearStorageManager.factory(args)
 
-    if storage_manager == None:
+    if storage_manager is None:
         parser.print_help()
         return
 
@@ -42,7 +42,7 @@ def main():
         # idk what this does?
         dash_s_do="setsingle",
     )
-    server.parse(unknown, errex=0)
+    server.parse(unknown, errex=1)
     return server.main()
 
 
