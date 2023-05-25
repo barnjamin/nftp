@@ -1,6 +1,6 @@
 N-FTP
 -----
 
-Nakamoto File Transfer Protocol
+Nondeterministic File Transfer Protocol
 
 lmao
