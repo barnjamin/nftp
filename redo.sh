@@ -1,12 +1,12 @@
 #!/bin/bash
 
-#set -euo pipefail
+set -euo pipefail
 
 export DIR=`mktemp -d`
 export LOG=/tmp/nftp.log
 
-/home/ben/sandbox/sandbox reset
-python algorand/client.py
+# /home/ben/sandbox/sandbox reset
+# python algorand/client.py
 
 echo $DIR
 
@@ -19,8 +19,6 @@ echo "" > $LOG
 echo "--mnt--"
 
 echo ""
-
-exit 0
 
 echo "--ls--"
 ls $DIR
@@ -53,6 +51,14 @@ cat $DIR/README.md
 cat $LOG
 echo "" > $LOG
 echo "--cat--"
+
+echo ""
+
+echo "--rm--"
+rm $DIR/README.md
+cat $LOG
+echo "" > $LOG
+echo "--rm--"
 
 echo ""
 

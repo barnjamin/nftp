@@ -16,9 +16,8 @@ ALGOD_HOST = "http://localhost:4001"
 ALGOD_TOKEN = "a" * 64
 
 
-
-
 file_meta_codec = ABIType.from_string(str(app.FileMeta().type_spec()))
+
 
 def chunk_key(name: bytes, idx: int) -> bytes:
     return name + idx.to_bytes(8, "big")
@@ -97,11 +96,15 @@ class AlgorandStorageManager(StorageManager):
         acct = bkr.localnet.get_accounts().pop()
         algod_client = bkr.localnet.clients.get_algod_client()
 
-        return AlgorandStorageManager(
-            app_client=bkr.client.application_client.ApplicationClient(
-                algod_client, app.nftp, signer=acct.signer, app_id=args.algorand_appid
-            )
+        app_client = bkr.client.application_client.ApplicationClient(
+            algod_client, app.nftp, signer=acct.signer, app_id=args.algorand_appid
         )
+
+        if app_client.app_id == 0:
+            app_client.create()
+            app_client.fund(100 * bkr.consts.algo)
+
+        return AlgorandStorageManager(app_client=app_client)
 
     def list_files(self) -> dict[str, FileStat]:
         names = self.app_client.get_box_names()
@@ -229,7 +232,9 @@ class AlgorandStorageManager(StorageManager):
 
         hash = sha256(name.encode()).digest()
         for idx in range(self.files[name].num_boxes):
-            self._delete_box(hash, idx)
+            self._delete_chunk(hash, idx)
+
+        self._delete_file(hash)
 
         del self.files[name]
 
@@ -262,7 +267,7 @@ class AlgorandStorageManager(StorageManager):
             return bytes(self.storage_size)
         return val
 
-    def _delete_box(self, hash: bytes, idx: int):
+    def _delete_chunk(self, hash: bytes, idx: int):
         box_name = chunk_key(hash, idx)
         try:
             self.app_client.call(
@@ -271,7 +276,20 @@ class AlgorandStorageManager(StorageManager):
                 boxes=[(0, box_name), (0, hash)],
             )
         except Exception as e:
-            logging.error(f"Failed to delete in app call: {e}")
+            logging.error(
+                f"Failed to delete in app call: {e} ({box_name.hex()} {hash.hex()})"
+            )
+            raise e
+
+    def _delete_file(self, hash: bytes):
+        try:
+            self.app_client.call(
+                app.delete_file,
+                hash=hash,
+                boxes=[(0, hash)],
+            )
+        except Exception as e:
+            logging.error(f"Failed to delete in app call: {e} {hash.hex()}")
             raise e
 
     def _write_chunk(self, hash: bytes, idx: int, data: bytes):

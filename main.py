@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description="nftp setup")
 
     parser.add_argument("--algorand", action="store_true", help="run algorand engine")
-    parser.add_argument("--algorand_appid", type=int, help="algorand appid", default=1)
+    parser.add_argument("--algorand_appid", type=int, help="algorand appid", default=0)
 
     parser.add_argument("--near", action="store_true", help="run near engine")
     parser.add_argument(
@@ -27,7 +27,7 @@ def main():
 
     if args.algorand:
         storage_manager = AlgorandStorageManager.factory(args)
-
+        logging.debug(f"Using app id: {storage_manager.app_client.app_id}")
     # if args.near:
     #    storage_manager = NearStorageManager.factory(args)
 

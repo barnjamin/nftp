@@ -112,7 +112,7 @@ def delete_chunk(key: Bytes40) -> pt.Expr:
         bm.decode(pt.SetBit(bm.get(), idx.get(), pt.Int(0))),
         fm.set(bm, name),
         # write the new metadata
-        nftp.state._file_index[name.get()].set(fm),
+        nftp.state._file_index[hash.get()].set(fm),
         pt.Assert(nftp.state._storage[key].delete()),
     )
 
