@@ -14,12 +14,14 @@ pub mod nftp {
         ctx.accounts.file.create(name);
         Ok(())
     }
+
     pub fn write_chunk(
         ctx: Context<WriteFileChunk>,
-        name: String,
-        idx: u64,
+        _name: String,
+        _idx: u8,
         data: [u8; 512],
     ) -> Result<()> {
+        ctx.accounts.file.flip_bit(_idx);
         ctx.accounts.file_chunk.data = data;
         Ok(())
     }
@@ -37,6 +39,13 @@ impl File {
     fn create(&mut self, name: String) {
         self.name = name;
         self.bitmap = [0; 32];
+    }
+
+    fn flip_bit(&mut self, idx: u8){
+        let byt: usize = usize::from(idx) / 8;
+        let bit: u8 = idx % 8;
+
+        self.bitmap[byt] ^= 1 << bit
     }
 }
 
@@ -60,22 +69,28 @@ pub struct CreateFile<'info> {
         bump,
     )]
     pub file: Account<'info, File>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-#[instruction(name: String, idx: u64)]
+#[instruction(_name: String, _idx: u8)]
 pub struct WriteFileChunk<'info> {
     #[account(
         init,
         payer=authority,
         space=8 + 512,
-        seeds=[name.as_ref(), idx.to_be_bytes().as_ref()],
+        seeds=[_name.as_ref(), _idx.to_be_bytes().as_ref()],
         bump,
+        constraint = file.name == _name
     )]
     pub file_chunk: Account<'info, FileChunk>,
+
+    #[account(mut)]
+    pub file: Account<'info, File>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,

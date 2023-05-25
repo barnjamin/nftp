@@ -43,18 +43,24 @@ describe("nftp", () => {
   it('Write file chunk!', async () => {
     const owner = (program.provider as anchor.AnchorProvider).wallet
 
-    const buff = Array.from(new Uint8Array(512));
+    const buff = new Uint8Array(512);
     const idx = new anchor.BN(0)
 
-    const [fileChunkPDA, _] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from(testName), idx.toBuffer('be', 8)],
+    const [filePDA, ] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from(testName)],
+      program.programId
+    );
+
+    const [fileChunkPDA, ] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from(testName), idx.toBuffer('be', 1)],
       program.programId
     );
 
 
     await program.methods
-      .writeChunk(testName, idx, buff)
+      .writeChunk(testName, idx.toNumber(), [...buff])
       .accounts({
+        file: filePDA,
         fileChunk: fileChunkPDA,
         authority: owner.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -63,8 +69,7 @@ describe("nftp", () => {
 
 
     let fileState = await program.account.fileChunk.fetch(fileChunkPDA)
-
-    expect(fileState.data).to.eql(buff)
+    expect(fileState.data).to.eql([...buff])
   })
 
 
@@ -93,7 +98,7 @@ describe("nftp", () => {
     // Read in the file and chunk it into 
     // chunks of size 512 bytes exactly
     const buff = fs.readFileSync("tests/" + fname)
-    const chunks: Uint8Array[] = [];
+    const chunks: Buffer[] = [];
     for (let i = 0; i < buff.byteLength; i += 512) {
       let chunk = buff.subarray(i, i + 512)
       // Make sure the length is exactly 512 or solana pukes on serialization issues
@@ -107,22 +112,26 @@ describe("nftp", () => {
     for (let [i, b] of chunks.entries()) {
       const idx = new anchor.BN(i)
       const [fileChunkPDA, _] = anchor.web3.PublicKey.findProgramAddressSync(
-        [Buffer.from(fname), idx.toBuffer('be', 8)],
+        [Buffer.from(fname), idx.toBuffer('be', 1)],
         program.programId
       );
 
       // Write the chunk
       await program.methods
-        .writeChunk(fname, idx, [...b])
+        .writeChunk(fname, idx.toNumber(), [...b])
         .accounts({
+          file: filePDA,
           fileChunk: fileChunkPDA,
           authority: owner.publicKey,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc()
 
-      let fileState = await program.account.fileChunk.fetch(fileChunkPDA)
-      expect(fileState.data).to.eql([...b])
+      let fileChunkState = await program.account.fileChunk.fetch(fileChunkPDA)
+      expect(fileChunkState.data).to.eql([...b])
+
+       let fileState = await program.account.file.fetch(filePDA)
+       expect(fileState.bitmap).to.eql([1, ...new Uint8Array(31)])
     }
   })
 });
