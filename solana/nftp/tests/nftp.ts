@@ -1,8 +1,11 @@
-import { expect } from 'chai';
+import { expect, config } from 'chai';
 import fs from 'fs';
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Nftp } from "../target/types/nftp";
+
+config.truncateThreshold = 0;
+
 
 describe("nftp", () => {
   // Configure the client to use the local cluster.
@@ -46,12 +49,12 @@ describe("nftp", () => {
     const buff = new Uint8Array(512);
     const idx = new anchor.BN(0)
 
-    const [filePDA, ] = anchor.web3.PublicKey.findProgramAddressSync(
+    const [filePDA,] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from(testName)],
       program.programId
     );
 
-    const [fileChunkPDA, ] = anchor.web3.PublicKey.findProgramAddressSync(
+    const [fileChunkPDA,] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from(testName), idx.toBuffer('be', 1)],
       program.programId
     );
@@ -73,7 +76,7 @@ describe("nftp", () => {
   })
 
 
-  it('Write full file', async () => {
+  describe('Write and delete full file', async () => {
     const owner = (program.provider as anchor.AnchorProvider).wallet
 
     // Create file entry
@@ -82,18 +85,21 @@ describe("nftp", () => {
       [Buffer.from(fname)],
       program.programId
     );
-    await program.methods
-      .createFile(fname)
-      .accounts({
-        file: filePDA,
-        authority: owner.publicKey,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc()
 
-    let fileState = await program.account.file.fetch(filePDA)
-    expect(fileState.name).to.eql(fname)
-    expect(fileState.bitmap).to.eql(Array.from(new Uint8Array(32)));
+    it('create file', async () => {
+      await program.methods
+        .createFile(fname)
+        .accounts({
+          file: filePDA,
+          authority: owner.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc()
+
+      let fileState = await program.account.file.fetch(filePDA)
+      expect(fileState.name).to.eql(fname)
+      expect(fileState.bitmap).to.eql(Array.from(new Uint8Array(32)));
+    })
 
     // Read in the file and chunk it into 
     // chunks of size 512 bytes exactly
@@ -108,30 +114,66 @@ describe("nftp", () => {
       chunks.push(chunk)
     }
 
-    // For each chunk write it to the chain
-    for (let [i, b] of chunks.entries()) {
-      const idx = new anchor.BN(i)
-      const [fileChunkPDA, _] = anchor.web3.PublicKey.findProgramAddressSync(
-        [Buffer.from(fname), idx.toBuffer('be', 1)],
-        program.programId
-      );
 
-      // Write the chunk
-      await program.methods
-        .writeChunk(fname, idx.toNumber(), [...b])
-        .accounts({
-          file: filePDA,
-          fileChunk: fileChunkPDA,
-          authority: owner.publicKey,
-          systemProgram: anchor.web3.SystemProgram.programId,
-        })
-        .rpc()
+    it('write chunks', async () => {
+      // For each chunk write it to the chain
+      for (let [i, b] of chunks.entries()) {
+        const idx = new anchor.BN(i)
+        const [fileChunkPDA, _] = anchor.web3.PublicKey.findProgramAddressSync(
+          [Buffer.from(fname), idx.toBuffer('be', 1)],
+          program.programId
+        );
 
-      let fileChunkState = await program.account.fileChunk.fetch(fileChunkPDA)
-      expect(fileChunkState.data).to.eql([...b])
+        // Write the chunk
+        await program.methods
+          .writeChunk(fname, idx.toNumber(), [...b])
+          .accounts({
+            file: filePDA,
+            fileChunk: fileChunkPDA,
+            authority: owner.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          })
+          .rpc()
 
-       let fileState = await program.account.file.fetch(filePDA)
-       expect(fileState.bitmap).to.eql([1, ...new Uint8Array(31)])
-    }
+        let fileChunkState = await program.account.fileChunk.fetch(fileChunkPDA)
+        expect(fileChunkState.data).to.eql([...b])
+      }
+
+      // TODO: for larger files, more bits will be set
+      let fileState = await program.account.file.fetch(filePDA)
+      expect(fileState.bitmap).to.eql([1, ...new Uint8Array(31)])
+    })
+
+    it('deletes chunks', async () => {
+      // For each chunk write it to the chain
+      for (let [i,] of chunks.entries()) {
+        const idx = new anchor.BN(i)
+        const [fileChunkPDA, _] = anchor.web3.PublicKey.findProgramAddressSync(
+          [Buffer.from(fname), idx.toBuffer('be', 1)],
+          program.programId
+        );
+
+        // Write the chunk
+        await program.methods
+          .deleteChunk(fname, idx.toNumber())
+          .accounts({
+            file: filePDA,
+            fileChunk: fileChunkPDA,
+            authority: owner.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          })
+          .rpc()
+
+        try {
+          await program.account.fileChunk.fetch(fileChunkPDA)
+        } catch (e) {
+          expect(e.message).to.contain('Account does not exist');
+        }
+
+      }
+
+      let fileState = await program.account.file.fetch(filePDA)
+      expect(fileState.bitmap).to.eql([...new Uint8Array(32)])
+    })
   })
 });

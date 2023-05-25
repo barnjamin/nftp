@@ -25,6 +25,11 @@ pub mod nftp {
         ctx.accounts.file_chunk.data = data;
         Ok(())
     }
+
+    pub fn delete_chunk(ctx: Context<DeleteFileChunk>, _name: String, _idx: u8) -> Result<()> {
+        ctx.accounts.file.flip_bit(_idx);
+        Ok(())
+    }
 }
 
 #[account]
@@ -41,7 +46,7 @@ impl File {
         self.bitmap = [0; 32];
     }
 
-    fn flip_bit(&mut self, idx: u8){
+    fn flip_bit(&mut self, idx: u8) {
         let byt: usize = usize::from(idx) / 8;
         let bit: u8 = idx % 8;
 
@@ -84,6 +89,26 @@ pub struct WriteFileChunk<'info> {
         space=8 + 512,
         seeds=[_name.as_ref(), _idx.to_be_bytes().as_ref()],
         bump,
+        constraint = file.name == _name
+    )]
+    pub file_chunk: Account<'info, FileChunk>,
+
+    #[account(mut)]
+    pub file: Account<'info, File>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(_name: String, _idx: u8)]
+pub struct DeleteFileChunk<'info> {
+    #[account(
+        mut,
+        seeds=[_name.as_ref(), _idx.to_be_bytes().as_ref()],
+        bump,
+        close=authority,
         constraint = file.name == _name
     )]
     pub file_chunk: Account<'info, FileChunk>,
